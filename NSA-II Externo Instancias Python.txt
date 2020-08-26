@@ -1,0 +1,1407 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Fri May  8 11:23:43 2020
+
+@author: Majo
+"""
+
+import pandas as pd #lIBRERÍA PARA IMPORTAR EXCELL
+import numpy as np #LIBRERIA PARA MATRICES Y VECTORES
+from random import randint #LIBRERIA PARA ALEATORIOS
+import math
+import copy
+import time
+############################ PARAMETROS DE ENTRADA DEL USUARIO##########################
+#Tamaño de la población inicial N
+N=30
+#Numero de objetivos
+m=2
+nombreIns="Instancia1.xlsx"
+instancias=["Instancia1.xlsx","Instancia2.xlsx","Instancia3.xlsx","Instancia4.xlsx","Instancia5.xlsx","Instancia6.xlsx","Instancia7.xlsx","Instancia8.xlsx","Instancia9.xlsx","Instancia10.xlsx","Instancia11.xlsx","Instancia12.xlsx"]
+
+############################## DATOS ##################################################
+for ins in range(0,1): #len(instancias)
+    
+    nombreIns="Instancia2.xlsx"
+    archivo = open("Experimentos.txt","a")
+    archivo.write('\n'+"*******************"+" " +str((nombreIns))+" "+"*******************")
+    archivo.close()
+    replicas=1
+    for repli in range(1,7):#16
+        archivo = open("Experimentos.txt","a")
+        archivo.write('\n' +'\n'+"Replica número "+str((repli)))
+        archivo.close()
+        ############################## DATOS ##################################################
+        
+        coordclientes=pd.read_excel(nombreIns, sheetname='Clientes',  header=None).as_matrix()
+        coordinstalaciones=pd.read_excel(nombreIns, sheetname='Bodegas',  header=None).as_matrix()
+        clientes=coordclientes.shape[0]
+        instalaciones=coordinstalaciones.shape[0]
+        nodos=clientes+instalaciones
+        #Vehiculos refrigerados, genericos y total
+        kr=3
+        kg=3
+        k=kr+kg
+        #Capacidad vehiculos ck, costofijo cfk, velocidad vehiculos vk, costo fijo por vehiculo cfk
+        ck=np.array((pd.read_excel(nombreIns, sheetname='VehiculoCapacidad',  header=None).as_matrix()).T)[0]
+        cfk=1000
+        vk=80
+        cfk=1000
+        #Tasa de mantenimiento de frecura
+        tcer=0.134166667
+        tcei=0.5366667
+        
+        #capacidades instalaciones ci, costos de apertura cai
+        ci=np.array((pd.read_excel(nombreIns, sheetname='CapacidadB',  header=None).as_matrix()).T)[0]
+        cai=np.array((pd.read_excel(nombreIns, sheetname='CostoA',  header=None).as_matrix()).T)[0] 
+        
+        
+        #Demanda de los clientes
+        demanda=np.array((pd.read_excel(nombreIns, sheetname='Demanda',  header=None).as_matrix()).T)[0] 
+        ts=np.array((pd.read_excel(nombreIns, sheetname='TiempoServicio',  header=None).as_matrix()).T)[0]
+        
+        #ASPECTOS DE CALIDAD
+        #calidad inicial desde la instalación
+        Ms=100
+        #Tasa de perecibilidad gr y gg vehiculos refrigerados y genericos
+        gr=0.003
+        gg=0.08
+        #Tiempos máximos para garantizar un nivel de calidad mìnimo
+        tr=73.94958321
+        tg=27.7310937
+        #matrizdistancia entre clientes_Instalaciones,  clientes_clientes, matriz de tiempos
+        
+        matrizDistanciasC_I=np.zeros((clientes,instalaciones))
+        matrizDistanciasC_C=np.zeros((clientes,clientes))
+        for i in range(0,clientes):
+            for j in range(0,instalaciones):
+                matrizDistanciasC_I[i][j]=math.sqrt(pow((coordinstalaciones[j][1]-coordclientes[i][1]),2)+pow((coordinstalaciones[j][0]-coordclientes[i][0]),2))
+                
+        for i in range(0,clientes):
+            for j in range(0,clientes):
+                if(i==j):
+                    matrizDistanciasC_C[i][j]=0
+                else:
+                    matrizDistanciasC_C[i][j]=math.sqrt(pow((coordclientes[j][1]-coordclientes[i][1]),2)+pow((coordclientes[j][0]-coordclientes[i][0]),2))
+        
+        
+        #Matriz de tiempos de recorrido
+        mtrC_I=np.zeros((clientes,instalaciones))
+        mtrC_C=np.zeros((clientes,clientes))
+        
+        for i in range(0,clientes):
+            for j in range(0,instalaciones):
+                mtrC_I[i][j]=matrizDistanciasC_I[i][j]/vk
+        
+        for i in range(0,clientes):
+            for j in range(0,clientes):
+                mtrC_C[i][j]=matrizDistanciasC_C[i][j]/vk
+        
+        
+        
+        ############################## SETUP #####################################################
+        #Probabilidades dadas por el usuario
+        probCruzamiento=0.95
+        probMutacion=0.10
+        #CREACIÓN DE LA POBLACION INICIAL############
+        #Vector auxiliar de clientes        
+        
+        numeros=np.zeros(clientes)
+        numerosk=np.zeros(clientes)
+        for i in range(0,clientes):
+            numeros[i]=i+1
+            numerosk[i]=i+1
+               
+        #Primera parte del cromosoma Instalaciones
+        cp1=np.random.randint(1, instalaciones+1, (N, k))
+        #Segunda parte del cromosoma Instalaciones
+        cp2=np.zeros((N,k))
+        for i in range(0,N):
+            np.random.shuffle(numerosk)
+            aux=copy.deepcopy(numerosk[:k])
+            cp2[i,:]=aux
+            
+        #Tercera parte del cromosoma
+        cp3=np.zeros((N,clientes))
+        for i in range(0,N):
+            np.random.shuffle(numeros)
+            aux=copy.deepcopy(numeros)
+            cp3[i,:]=aux
+        
+        P=np.zeros((N,2*k+clientes))
+        P[:,:k]=cp1
+        P[:,k:2*k]=cp2
+        P[:,2*k:]=cp3
+        
+        #INICIALIZAR MATRIZ Q
+        Q=np.zeros((N,2*k+clientes))
+        
+        #INICIALIZAR MATRIZ R
+        R=np.zeros((2*N,2*k+clientes))
+        
+        #MATRIZ DE FITS
+        fitP=np.zeros((N,m))
+        fitQ=np.zeros((N,m))
+        fitR=np.zeros((2*N,m))
+        
+        #MATRIZ DE RANKEO
+        rankeoP=np.zeros((N,1))
+        rankeoQ=np.zeros((N,1))
+        rankeoR=np.zeros((2*N,1))
+        
+        #Distancias crowding
+        cwdisP=np.zeros((N,1))
+        cwdisQ=np.zeros((N,1))
+        cwdisR=np.zeros((2*N,1))
+        
+        
+        ############################################## METODOS #####################################################
+        
+        #FUNCION DE EVALUACION OBJETIVO 1
+        def evaluacioniniO1(cromosoma):
+            cromosoma=cromosoma.astype(int)
+            suma=0
+            
+            cantidadk=np.zeros(k)
+           # suma1=0
+            #Apertura de la bodega
+            for i in range(1,instalaciones+1):
+                if i in cromosoma[:k]:
+                    suma=suma+cai[i-1]
+            #Costo fijo por utilizar un vehículo
+            for i in range(k,2*k):
+                if cromosoma[i] != 0:
+                    suma=suma+cfk  
+                    
+            #Distancias de las rutas
+            
+            for i in range(k,2*k):
+                bandera=0
+                #Buscar al primer cliente de cada ruta, si hay uno asignado
+                contador=0
+                
+                indice=0 
+                j=2*k
+                if cromosoma[i] > 0:
+                    suma=suma+matrizDistanciasC_I[cromosoma[i]-1,cromosoma[i-k]-1]
+                    cantidadk[i-k]=cantidadk[i-k]+demanda[cromosoma[i]-1]
+                    while bandera == 0:
+                        if cromosoma[i]==cromosoma[j]:
+                            indice=copy.deepcopy(j)
+                            bandera=1
+                        j=j+1
+                        contador=contador +1
+                        if contador == clientes:
+                            bandera=1
+                        
+                    aux=copy.deepcopy(indice)+1
+                    contador=0
+                    while bandera==1:
+                        
+                        if aux < 2*k+clientes:
+                            if cromosoma[aux] in cromosoma[k:2*k]:
+                                bandera=0
+                                #Aquí se suma el retorno a la bodega i-k
+                                suma=suma+matrizDistanciasC_I[cromosoma[indice]-1,cromosoma[i-k]-1]
+                            else:
+                                a=cromosoma[indice]-1
+                                b=cromosoma[aux]-1
+                                suma=suma+matrizDistanciasC_C[a,b]
+                                cantidadk[i-k]=cantidadk[i-k]+demanda[b]
+                        else:
+                            aux=2*k
+                            if cromosoma[aux] in cromosoma[k:2*k]:
+                                bandera=0
+                                #Aquí se suma el retorno a la bodega i-k
+                                suma=suma+matrizDistanciasC_I[cromosoma[indice]-1,cromosoma[i-k]-1]
+                            else:
+                                a=cromosoma[indice]-1
+                                b=cromosoma[aux]-1
+                                suma=suma+matrizDistanciasC_C[a,b]
+                                cantidadk[i-k]=cantidadk[i-k]+demanda[b]
+                                indice=copy.deepcopy(aux)-1
+                        indice=indice+1
+                        aux=aux+1
+                        contador=contador +1
+                        if contador == clientes:
+                            bandera=0             
+            #Capacidades de las rutas
+            #Costo de mantenimiento de frescura por bodegas
+
+            for i in range(k,2*k):
+                if cromosoma[i] != 0:
+                    suma=suma+(tcei/cai[cromosoma[i-k]-1])*cantidadk[i-k]
+
+            
+            for i in range(k,k+kr):
+                bandera=0
+                #Buscar al primer cliente de cada ruta, si hay uno asignado
+                contador=0
+                
+                indice=0 
+                j=2*k
+                if cromosoma[i] > 0:
+                    suma=suma+matrizDistanciasC_I[cromosoma[i]-1,cromosoma[i-k]-1]*(tcer/ck)*cantidadk[i-k]
+                    cantidadk[i-k]=cantidadk[i-k]-demanda[cromosoma[i]-1]
+                    while bandera == 0:
+                        if cromosoma[i]==cromosoma[j]:
+                            indice=copy.deepcopy(j)
+                            bandera=1
+                        j=j+1
+                        contador=contador +1
+                        if contador == clientes:
+                            bandera=1
+                        
+                    aux=copy.deepcopy(indice)+1
+                    contador=0
+                    while bandera==1:
+                        
+                        if aux < 2*k+clientes:
+                            if cromosoma[aux] in cromosoma[k:2*k]:
+                                bandera=0
+                                #Aquí se suma el retorno a la bodega i-k
+                                suma=suma+matrizDistanciasC_I[cromosoma[indice]-1,cromosoma[i-k]-1]
+                            else:
+                                a=cromosoma[indice]-1
+                                b=cromosoma[aux]-1
+                                suma=suma+matrizDistanciasC_C[a,b]*(tcer/ck)*cantidadk[i-k]
+                                cantidadk[i-k]=cantidadk[i-k]-demanda[b]
+                        else:
+                            aux=2*k
+                            if cromosoma[aux] in cromosoma[k:2*k]:
+                                bandera=0
+                                #Aquí se suma el retorno a la bodega i-k
+                                suma=suma+matrizDistanciasC_I[cromosoma[indice]-1,cromosoma[i-k]-1]
+                            else:
+                                a=cromosoma[indice]-1
+                                b=cromosoma[aux]-1
+                                suma=suma+matrizDistanciasC_C[a,b]*(tcer/ck)*cantidadk[i-k]
+                                cantidadk[i-k]=cantidadk[i-k]-demanda[b]
+                                indice=copy.deepcopy(aux)-1
+                        indice=indice+1
+                        aux=aux+1
+                        contador=contador +1
+                        if contador == clientes:
+                            bandera=0
+        
+            return(suma)
+            
+            
+        #FUNCION DE EVALUACION OBJETIVO 1
+        def evaluacioniniO2(cromosoma):
+            cromosoma=cromosoma.astype(int)
+            sumaCalidad=0
+        
+            #Distancias de las rutas
+            
+            for i in range(k,2*k):
+                bandera=0
+                #Buscar al primer cliente de cada ruta, si hay uno asignado
+                contador=0
+                if i < k+kr:
+                    g=gr
+                else:
+                    g=gg
+                indice=0
+                j=2*k
+                if cromosoma[i] > 0:
+                    sumaCalidad=sumaCalidad+Ms*math.exp(-1*g*(mtrC_I[cromosoma[i]-1,cromosoma[i-k]-1]+ts[cromosoma[i]-1]))
+                    while bandera == 0:
+                        if cromosoma[i]==cromosoma[j]:
+                            indice=copy.deepcopy(j)
+                            bandera=1
+                        j=j+1
+                        contador=contador +1
+                        if contador == clientes:
+                            bandera=1
+                        
+                    aux=copy.deepcopy(indice)+1
+                    contador=0
+                    while bandera==1:
+                        
+                        if aux < 2*k+clientes:
+                            if cromosoma[aux] in cromosoma[k:2*k]:
+                                bandera=0     
+                            else:
+                                a=cromosoma[indice]-1
+                                b=cromosoma[aux]-1
+                                sumaCalidad=sumaCalidad+Ms*math.exp(-1*g*(mtrC_C[a,b]+ts[b]))
+                        else:
+                            aux=2*k
+                            if cromosoma[aux] in cromosoma[k:2*k]:
+                                bandera=0
+                            else:
+                                a=cromosoma[indice]-1
+                                b=cromosoma[aux]-1
+                                sumaCalidad=sumaCalidad+Ms*math.exp(-1*g*(mtrC_C[a,b]+ts[b]))
+                                indice=copy.deepcopy(aux)-1
+                        indice=indice+1
+                        aux=aux+1
+                        contador=contador +1
+                        if contador == clientes:
+                            bandera=0
+            PromCalidad=sumaCalidad/clientes
+            return(PromCalidad)
+                    
+        #FUNCIONES DE PENALIZACION POR VIOLACION DE RESTRICCIONES
+        def penalizacionO1(cromosoma,iteracion):
+            cromosoma=cromosoma.astype(int)
+            #Restricion de capacidad de los vehiculos
+            A=np.zeros((1,2))
+            #Restriccion de capacidad de las bodegas
+            B=np.zeros((1,2))
+            #Restricciones de tiempo
+            #para vehiculos refrigerados
+            C1=np.zeros((1,2))
+            #Para vehiculos genericos
+            C2=np.zeros((1,2))
+            penalizacionA=0
+            penalizacionB=0
+            penalizacionC1=0
+            penalizacionC2=0
+            bandera=0
+            Total=0
+            cantidadk=np.zeros((k,1))
+            tiempok=np.zeros((k,1))
+            capacidadi=copy.deepcopy(ci)
+            #Sumatorias necesarias para la verificacion de las restricciones
+            for i in range(k,2*k):
+                bandera=0
+                #Buscar al primer cliente de cada ruta, si hay uno asignado
+                contador=0
+                
+                indice=0 
+                j=2*k
+                
+                if cromosoma[i] > 0:
+                    tiempok[i-k]=tiempok[i-k]+mtrC_I[cromosoma[i]-1,cromosoma[i-k]-1]+ts[cromosoma[i]-1]
+                    cantidadk[i-k]=cantidadk[i-k]+demanda[cromosoma[i]-1]
+                    while bandera == 0:
+                        if cromosoma[i]==cromosoma[j]:
+                            indice=copy.deepcopy(j)
+                            bandera=1
+                        j=j+1
+                        contador=contador +1
+                        if contador == clientes:
+                            bandera=1
+                        
+                    aux=copy.deepcopy(indice)+1
+                    contador=0
+                    while bandera==1:
+                        
+                        if aux < 2*k+clientes:
+                            if cromosoma[aux] in cromosoma[k:2*k]:
+                                bandera=0
+                                # retorno a la bodega i-k
+        
+                            else:
+                                a=cromosoma[indice]-1
+                                b=cromosoma[aux]-1
+                                tiempok[i-k]=tiempok[i-k]+mtrC_C[a,b]+ts[b]
+                                cantidadk[i-k]=cantidadk[i-k]+demanda[b]
+                        else:
+                            aux=2*k
+                            if cromosoma[aux] in cromosoma[k:2*k]:
+                                bandera=0
+                                # retorno a la bodega i-k
+                            else:
+                                a=cromosoma[indice]-1
+                                b=cromosoma[aux]-1
+                                tiempok[i-k]=tiempok[i-k]+mtrC_C[a,b]+ts[b]
+                                cantidadk[i-k]=cantidadk[i-k]+demanda[b]
+                                indice=copy.deepcopy(aux)-1
+                        indice=indice+1
+                        aux=aux+1
+                        contador=contador +1
+                        if contador == clientes:
+                            bandera=0  
+            #Penalizaciones
+            for i in range(0,k):
+                if cantidadk[i] - ck > 0: 
+                    penalizacionA=penalizacionA + (cantidadk[i] - ck )*(cfk*k)
+            
+            for i in range(0,k):
+                capacidadi[cromosoma[i]-1]=capacidadi[cromosoma[i]-1] - cantidadk[i]
+            for i in range(0,k):
+                if i+1 in cromosoma[0:k]:
+                    if capacidadi[i] < 0:
+                        penalizacionB=penalizacionB+capacidadi[i]*(cfk*k*-1)
+        
+            for i in range(0,kr):
+                if tiempok[i] - tr > 0:
+                    penalizacionC1=penalizacionC1 + (tiempok[i] - tr)*(2)
+                    
+            for i in range(kr,k):
+               if tiempok[i] - tg > 0:
+                   penalizacionC2=penalizacionC2 + (tiempok[i] - tg)*(2)
+        
+            #Asignacion de los resultados
+            A=[0,penalizacionA]
+            B=[0,penalizacionB]
+            C1=[0,penalizacionC1]
+            C2=[0,penalizacionC2]
+        
+            Total=(max(A)+max(B)+max(C1)+max(C2))*iteracion
+            return(Total)
+            
+            
+        def penalizacionO2(cromosoma,iteracion):
+            cromosoma=cromosoma.astype(int)
+            #Restricion de capacidad de los vehiculos
+            A=np.zeros((1,2))
+            #Restriccion de capacidad de las bodegas
+            B=np.zeros((1,2))
+            #Restricciones de tiempo
+            #para vehiculos refrigerados
+            C1=np.zeros((1,2))
+            #Para vehiculos genericos
+            C2=np.zeros((1,2))
+            penalizacionA=0
+            penalizacionB=0
+            penalizacionC1=0
+            penalizacionC2=0
+            bandera=0
+            Total=0
+            cantidadk=np.zeros((k,1))
+            tiempok=np.zeros((k,1))
+            capacidadi=copy.deepcopy(ci)
+            #Sumatorias necesarias para la verificacion de las restricciones
+            for i in range(k,2*k):
+                bandera=0
+                #Buscar al primer cliente de cada ruta, si hay uno asignado
+                contador=0
+                
+                indice=0 
+                j=2*k
+                
+                if cromosoma[i] > 0:
+                    tiempok[i-k]=tiempok[i-k]+mtrC_I[cromosoma[i]-1,cromosoma[i-k]-1]+ts[cromosoma[i]-1]
+                    cantidadk[i-k]=cantidadk[i-k]+demanda[cromosoma[i]-1]
+                    while bandera == 0:
+                        if cromosoma[i]==cromosoma[j]:
+                            indice=copy.deepcopy(j)
+                            bandera=1
+                        j=j+1
+                        contador=contador +1
+                        if contador == clientes:
+                            bandera=1
+                        
+                    aux=copy.deepcopy(indice)+1
+                    contador=0
+                    while bandera==1:
+                        
+                        if aux < 2*k+clientes:
+                            if cromosoma[aux] in cromosoma[k:2*k]:
+                                bandera=0
+                                # retorno a la bodega i-k
+        
+                            else:
+                                a=cromosoma[indice]-1
+                                b=cromosoma[aux]-1
+                                tiempok[i-k]=tiempok[i-k]+mtrC_C[a,b]+ts[b]
+                                cantidadk[i-k]=cantidadk[i-k]+demanda[b]
+                        else:
+                            aux=2*k
+                            if cromosoma[aux] in cromosoma[k:2*k]:
+                                bandera=0
+                                # retorno a la bodega i-k
+                            else:
+                                a=cromosoma[indice]-1
+                                b=cromosoma[aux]-1
+                                tiempok[i-k]=tiempok[i-k]+mtrC_C[a,b]+ts[b]
+                                cantidadk[i-k]=cantidadk[i-k]+demanda[b]
+                                indice=copy.deepcopy(aux)-1
+                        indice=indice+1
+                        aux=aux+1
+                        contador=contador +1
+                        if contador == clientes:
+                            bandera=0  
+        
+            
+            #Penalizaciones
+            for i in range(0,k):
+                if cantidadk[i] - ck > 0: 
+                    penalizacionA=penalizacionA + (cantidadk[i] - ck )*(cfk)
+            
+            for i in range(0,k):
+                capacidadi[cromosoma[i]-1]=capacidadi[cromosoma[i]-1] - cantidadk[i]
+            for i in range(0,k):
+                if i+1 in cromosoma[0:k]:
+                    if capacidadi[i] < 0:
+                        penalizacionB=penalizacionB+capacidadi[i]*(cfk)*-1
+        
+            for i in range(0,kr):
+                if tiempok[i] - tr > 0:
+                    penalizacionC1=penalizacionC1 + (tiempok[i] - tr)*(2*k)
+                    
+            for i in range(kr,k):
+               if tiempok[i] - tg > 0:
+                   penalizacionC2=penalizacionC2 + (tiempok[i] - tg)*(2*k)
+            #Asignacion de los resultados
+            A=[0,penalizacionA]
+            B=[0,penalizacionB]
+            C1=[0,penalizacionC1]
+            C2=[0,penalizacionC2]
+            Total=(max(A)+max(B)+max(C1)+max(C2))*iteracion
+            return(Total)
+            
+            
+        #fitObjetivos evaluar las funciones en la poblacion P/Q/R de tamaño N/2N
+        def fitObjetivos(matrizFit,poblacion,tamaño,iteracion):
+            for i in range(0,tamaño):
+                matrizFit[i,0]=evaluacioniniO1(poblacion[i,:])+penalizacionO1(poblacion[i,:],iteracion)
+                matrizFit[i,1]=evaluacioniniO2(poblacion[i,:])- penalizacionO2(poblacion[i,:],iteracion)
+            return(matrizFit)
+                
+        ############### FUNCIONES DE RANKEO DE LA POBLACIÓN ################################
+        def rankeo(fit,tamaño):
+             
+        
+            #VECTOR DE SOLUCIONES QUE DOMINAN A LA SOLUCION ACTUAL EVALUADA NP
+            ns=np.zeros((tamaño,1))
+            nsAux=np.zeros((tamaño,1))
+            #Vector de rankeo de las soluciones
+            rank=np.zeros((tamaño,1))
+            #MATRIZ DE SOLUCIONES QUE SON DOMINADAS POR LA SOLUCION ACTUAL EVALUADA
+            sp=np.zeros((tamaño,tamaño))
+            listaP=[]
+        
+            #Evaluación de dominancia y no dominancia
+            for i in range(0,tamaño):
+                listaP.append(i)
+                for j in range(0,tamaño):
+                    ban=0
+                    if fit[i,0] < fit[j,0]:
+                        ban=ban+1
+                    if fit[i,1] > fit[j,1]:
+                        ban=ban+1
+                    if i!=j:
+                        if ban==2:
+                            sp[i,j]=1
+            for i in range(0,tamaño):
+                for j in range(0,tamaño):
+                    ns[j]=ns[j]+sp[i,j]
+            nsAux=copy.deepcopy(ns)
+        
+            #Rankeo de las fronteras
+            #mientras se identifican todas las fronteras
+            
+            listaF=[]
+            frontera=1
+            listaux=[]
+            for i in range(0,N):
+                listaux.append(ns[i])
+                
+            while (len(listaP) >0) and (ban==0):
+                listaF=[]
+                for i in range(0,tamaño):
+                    
+                    if (ns[i]==0) and (i in listaP):
+                        
+                        for j in range(0,tamaño):
+                            if sp[i,j]==1:
+                                listaF.append(j)
+                        listaP.remove(i)
+                        rank[i]=frontera
+                        
+                for z in range(0,tamaño):
+                    if z in listaF:
+                        nsAux[z]=nsAux[z]-listaF.count(z)
+                ns=copy.deepcopy(nsAux)
+                if frontera > 2*N:
+                    ban=1
+                frontera=frontera+1
+            return(rank)
+            
+        def fastNonDominatedSort(poblacion, fit,rankeop, tamaño):
+            #Ordenar la población con las fronteras de menor a mayor
+            #Ordenar tambien sus valores asociados de fit, poblacion, rankeo, 
+            aux=0
+            aux1=np.zeros((1,m))
+            aux2=np.zeros((1,2*k+clientes))
+            for i in range (0, tamaño):
+                for j in range(0, tamaño):
+                    if rankeop[j] > rankeop[i]:
+                        #Intercambiar rankeo
+                        aux=copy.deepcopy(rankeop[i])
+                        rankeop[i]=copy.deepcopy(rankeop[j])
+                        rankeop[j]=copy.deepcopy(aux)
+                        #Intercambiar fit
+                        aux1=copy.deepcopy(fit[i,:])
+                        fit[i,:]=copy.deepcopy(fit[j,:])
+                        fit[j,:]=copy.deepcopy(aux1)
+                        #Intercambiar Cromosoma
+                        aux2=copy.deepcopy(poblacion[i,:])
+                        poblacion[i,:]=copy.deepcopy(poblacion[j,:])
+                        poblacion[j,:]=copy.deepcopy(aux2)
+                        
+        
+        def rankeol(fit,tamaño):
+             
+        
+            #VECTOR DE SOLUCIONES QUE DOMINAN A LA SOLUCION ACTUAL EVALUADA NP
+            ns=np.zeros((tamaño,1))
+            nsAux=np.zeros((tamaño,1))
+            #Vector de rankeo de las soluciones
+            rank=np.zeros((tamaño,1))
+            #MATRIZ DE SOLUCIONES QUE SON DOMINADAS POR LA SOLUCION ACTUAL EVALUADA
+            sp=np.zeros((tamaño,tamaño))
+            listaP=[]
+        
+            #Evaluación de dominancia y no dominancia
+            for i in range(0,tamaño):
+                listaP.append(i)
+                for j in range(0,tamaño):
+                    ban=0
+                    if fit[i][0] < fit[j][0]:
+                        ban=ban+1
+                    if fit[i][1] > fit[j][1]:
+                        ban=ban+1
+                    if i!=j:
+                        if ban==2:
+                            sp[i,j]=1
+            for i in range(0,tamaño):
+                for j in range(0,tamaño):
+                    ns[j]=ns[j]+sp[i,j]
+            nsAux=copy.deepcopy(ns)
+        
+            #Rankeo de las fronteras
+            #mientras se identifican todas las fronteras
+            
+            listaF=[]
+            frontera=1
+            listaux=[]
+            for i in range(0,tamaño):
+                listaux.append(ns[i])
+                
+            while (len(listaP) >0) and (ban==0):
+                listaF=[]
+                for i in range(0,tamaño):
+                    
+                    if (ns[i]==0) and (i in listaP):
+                        
+                        for j in range(0,tamaño):
+                            if sp[i,j]==1:
+                                listaF.append(j)
+                        listaP.remove(i)
+                        rank[i]=frontera
+                        
+                for z in range(0,tamaño):
+                    if z in listaF:
+                        nsAux[z]=nsAux[z]-listaF.count(z)
+                ns=copy.deepcopy(nsAux)
+                if frontera > 2*tamaño:
+                    ban=1
+                frontera=frontera+1
+            return(rank)
+            
+        def fastNonDominatedSortl(poblacion, fit,rankeop, tamaño):
+            #Ordenar la población con las fronteras de menor a mayor
+            #Ordenar tambien sus valores asociados de fit, poblacion, rankeo, 
+            aux=0
+            aux1=[]
+            aux2=[]
+            for i in range (0, tamaño):
+                for j in range(0, tamaño):
+                    if rankeop[j] > rankeop[i]:
+                        #Intercambiar rankeo
+                        aux=copy.deepcopy(rankeop[i])
+                        rankeop[i]=copy.deepcopy(rankeop[j])
+                        rankeop[j]=copy.deepcopy(aux)
+                        #Intercambiar fit
+                        aux1=copy.deepcopy(fit[i])
+                        fit[i]=copy.deepcopy(fit[j])
+                        fit[j]=copy.deepcopy(aux1)
+                        #Intercambiar Cromosoma
+                        aux2=copy.deepcopy(poblacion[i])
+                        poblacion[i]=copy.deepcopy(poblacion[j])
+                        poblacion[j]=copy.deepcopy(aux2)
+             
+        ######## FUNCIONES CROWED DISTANCE##################
+        
+            
+        def crowedDistance(front,fit):
+        
+            front=front.astype(int)
+            tam=front.shape[0]
+            cwdis=np.zeros((tam,1))
+            aux=0
+            m=2
+            aux1=np.zeros((1,2*k+clientes))
+            aux2=np.zeros((1,m))
+            fmax=0
+            fmin=0
+            if tam > 0:
+                #Ordenar de manera ascendente por cada objetivo
+                for i in range(0,m):
+                    for j in range(0,tam):
+                        for z in range(0,tam):
+            
+                            if (fit[z,i] > fit[j,i]):
+                                #ordenar fit ascendentemente
+                                aux=copy.deepcopy(fit[j,i])
+                                fit[j,i]=copy.deepcopy(fit[z,i])
+                                fit[z,i]=copy.deepcopy(aux)
+                                #Intercambiar cromosomas
+                                aux1=copy.deepcopy(front[j,:])
+                                front[j,:]=copy.deepcopy(front[z,:])
+                                front[z,:]=copy.deepcopy(aux1)
+                                #Intercambiar distancias
+                                aux2=copy.deepcopy(cwdis[j])
+                                cwdis[j]=copy.deepcopy(cwdis[z])
+                                cwdis[z]=copy.deepcopy(aux2)
+            
+                    fmax=fit[tam-1,i]
+                    fmin=fit[0,i]
+            
+                    cwdis[tam-1]=math.inf
+                    cwdis[0]=math.inf
+            
+                    for j in range(1, tam-2):
+                        cwdis[j]=cwdis[j]+((fit[j+1,i]-fit[j-1,i])/(fmax-fmin))
+        
+            return(cwdis, front, fit)
+                                      
+                    
+        def sortCD(front,fit,cwdis ):
+            aux=0
+            aux1=np.zeros((1,2*k+clientes))
+            aux2=np.zeros((1,m))
+            front=front.astype(int)
+            tam=front.shape[0]
+            for i in range(0,tam):
+                for j in range(0,tam):
+                    if cwdis[j] < cwdis[i]:
+                      #Ordenar de forma descendente
+                      #Intercambiar distancias
+                      aux=copy.deepcopy(cwdis[i])
+                      cwdis[i]=copy.deepcopy(cwdis[j])
+                      cwdis[j]=copy.deepcopy(aux)
+                      #Intercambiar cromosomas
+                      aux1=copy.deepcopy(front[i,:])
+                      front[i,:]=copy.deepcopy(front[j,:])
+                      front[j,:]=copy.deepcopy(aux1)
+                      #Intercambiar fit
+                      aux2=copy.deepcopy(fit[i,:])
+                      fit[i,:]=copy.deepcopy(fit[j,:])
+                      fit[j,:]=copy.deepcopy(aux2)
+            return(front,fit,cwdis)
+        
+        #FUNCIONES GENETICAS PARA SELECCION DE PADRES, COMBINACION, MUTACION
+        #SELECCION ENTRADA: 4 CROMOSOMA
+        #Torneo binario inicial
+        def seleccionBTI(cromosoma1, cromosoma2, cromosoma3, cromosoma4, rank1, rank2, rank3, rank4):
+            padre1=[0]*(2*k+clientes)
+            padre2=[0]*(2*k+clientes)
+            
+            if rank1 < rank2:
+                padre1=cromosoma1
+            else:
+                padre1=cromosoma2
+            if rank3 < rank4:
+                padre2=cromosoma3
+            else:
+                padre2=cromosoma4
+            return(padre1,padre2)
+        
+        #Torneo binario con crowding distance
+        def seleccionCD(cromosoma1, cromosoma2, cromosoma3, cromosoma4, rank1, rank2, rank3, rank4, dist1, dist2, dist3, dist4):
+            padre1=[0]*(2*k+clientes)
+            padre2=[0]*(2*k+clientes)
+            
+            if rank1==rank2:
+                if dist1 > dist2:
+                    padre1=cromosoma1
+                else:
+                    padre1=cromosoma2
+            else:
+                if rank1 < rank2:
+                    padre1=cromosoma1
+                else:
+                    padre1=cromosoma2
+            
+            if rank3==rank4:
+                if dist3 > dist4:
+                    padre2=cromosoma3
+                else:
+                    padre2=cromosoma4
+            else:
+                if rank3 < rank4:
+                    padre2=cromosoma3
+                else:
+                    padre2=cromosoma4
+            return(padre1,padre2)
+        
+        #CRUZAMIENTO ENTRADA: DOS CROMOSOMAS
+        def cruzamiento(cromosomap1,cromosomap2):
+            cromosomap1=cromosomap1.astype(int)
+            cromosomap2=cromosomap2.astype(int)
+            cromosomaq1=[0]*(2*k+clientes)
+            cromosomaq2=[0]*(2*k+clientes)
+            corte1=np.random.randint(0,2*k+clientes)
+            corte2=np.random.randint(0,2*k+clientes)
+            #corte1=np.random.randint(0,2*k)
+            #corte2=np.random.randint(0,2*k)
+            control=[0]
+            for i in range(0,2*k+clientes):
+                control.append(i)
+        
+            aux=0
+            i=0
+            #Asegurar que los cortes sean diferentes
+            while corte1==corte2:
+                corte2=np.random.randint(0,2*k+clientes)
+            #Asegurar que el primer corte en orden corresponda al corte1
+            if corte1 > corte2:
+                aux=copy.deepcopy(corte2)
+                corte2=copy.deepcopy(corte1)
+                corte1=copy.deepcopy(aux)
+        
+            #Cortes en la primera sección del cromosoma
+            if(corte1 in control[:k+1]) and (corte2 in control[:k+1]):
+                while i < corte1:
+                    cromosomaq1[i]=copy.deepcopy(cromosomap1[i])
+                    cromosomaq2[i]=copy.deepcopy(cromosomap2[i])
+                    i=i+1
+                while i < corte2:
+                    cromosomaq1[i]=copy.deepcopy(cromosomap2[i])
+                    cromosomaq2[i]=copy.deepcopy(cromosomap1[i])
+                    i=i+1
+                while i < (2*k+clientes):
+                    cromosomaq1[i]=copy.deepcopy(cromosomap1[i])
+                    cromosomaq2[i]=copy.deepcopy(cromosomap2[i])
+                    i=i+1
+            #Corte en la segunda seccion del cromosoma PMX Partialy mapped crossover
+            if (corte1 in control[k+1:2*k+1]) and (corte2 in control[k+1:2*k+1]):
+                lista1=[]
+                lista2=[]
+        
+                #Mejorar esto, aquí solo mira si un vehiculo no se usa   
+                for i in range(0, clientes+1):
+                    lista1.append(i)
+                    lista2.append(i)
+                for i in range(k, 2*k):
+                    if cromosomap1[i] in lista1:
+                        lista1.remove(cromosomap1[i])
+                    if cromosomap2[i] in lista2:
+                        lista2.remove(cromosomap2[i])
+                    if cromosomap2[i] in lista1:
+                        lista1.remove(cromosomap2[i])
+                    if cromosomap1[i] in lista2:
+                        lista2.remove(cromosomap1[i])
+                
+                np.random.shuffle(lista1)
+                np.random.shuffle(lista2)
+                
+                i=0
+                while i < k:
+                    cromosomaq1[i]=copy.deepcopy(cromosomap1[i])
+                    cromosomaq2[i]=copy.deepcopy(cromosomap2[i])
+                    i=i+1
+                while i < corte1:
+                    if cromosomap1[i] in cromosomap2[corte1:corte2]:
+                        cromosomaq1[i]=copy.deepcopy(lista1[0])
+                        lista1.remove(lista1[0])
+                    else: 
+                        cromosomaq1[i]=copy.deepcopy(cromosomap1[i])
+                        if cromosomap1[i] in lista1:
+                            lista1.remove(cromosomap1[i])
+        
+                    if cromosomap2[i] in cromosomap1[corte1:corte2]:
+                        cromosomaq2[i]=copy.deepcopy(lista2[0])
+                        lista2.remove(lista2[0])
+                    else: 
+                        cromosomaq2[i]=copy.deepcopy(cromosomap2[i])
+                        if cromosomap2[i] in lista2:
+                            lista2.remove(cromosomap2[i])
+                        
+                    i=i+1
+                while i < corte2+1:
+                    cromosomaq1[i]=copy.deepcopy(cromosomap2[i])
+                    cromosomaq2[i]=copy.deepcopy(cromosomap1[i])
+                    i=i+1
+                while i < 2*k:
+                    if cromosomap1[i] in cromosomap2[corte1:corte2]:
+                        cromosomaq1[i]=copy.deepcopy(lista1[0])
+                        lista1.remove(lista1[0])
+                    else: 
+                        cromosomaq1[i]=copy.deepcopy(cromosomap1[i])
+                        if cromosomap1[i] in lista1:
+                            lista1.remove(cromosomap1[i])
+        
+                    if cromosomap1[i] in cromosomap2[corte1:corte2]:
+                        cromosomaq2[i]=copy.deepcopy(lista2[0])
+                        lista2.remove(lista2[0])
+                    else: 
+                        cromosomaq2[i]=copy.deepcopy(cromosomap2[i])
+                        if cromosomap2[i] in lista2:
+                            lista2.remove(cromosomap2[i])
+                        
+                    i=i+1
+                while i < 2*k+clientes:
+                    cromosomaq1[i]=copy.deepcopy(cromosomap1[i])
+                    cromosomaq2[i]=copy.deepcopy(cromosomap2[i])
+                    i=i+1
+                
+                        
+            #Corte en la Tercera seccion del cromosoma OX order crossover operator
+            if (corte1 in control[2*k+1:2*k+clientes+1]) and (corte2 in control[2*k+1:2*k+clientes+1]):
+                i=0
+                indice=corte1
+                lista1=[]
+                lista2=[]
+                indicel=0
+                for i in range(2*k, 2*k+clientes):
+                    lista1.append(cromosomap1[i])
+                    lista2.append(cromosomap2[i])
+                i=0
+                while i < 2*k:
+                    cromosomaq1[i]=copy.deepcopy(cromosomap1[i])
+                    cromosomaq2[i]=copy.deepcopy(cromosomap2[i])
+                    i=i+1
+                for j in range(0,clientes):
+                    if (indice >= corte1) and (indice <=corte2):
+                        cromosomaq1[indice]=copy.deepcopy(cromosomap2[indice])
+                        cromosomaq2[indice]=copy.deepcopy(cromosomap1[indice])
+                        lista1.remove(cromosomap2[indice])
+                        lista2.remove(cromosomap1[indice])
+                        indice=indice+1
+                    else:
+                        if indice < 2*k+clientes:
+                            cromosomaq1[indice]=copy.deepcopy(lista1[indicel])
+                            cromosomaq2[indice]=copy.deepcopy(lista2[indicel])
+                            indicel=indicel+1
+                            indice=indice+1
+                        else:
+                            indice=2*k
+                            cromosomaq1[indice]=copy.deepcopy(lista1[indicel])
+                            cromosomaq2[indice]=copy.deepcopy(lista2[indicel])
+                            indicel=indicel+1
+                            indice=indice+1
+            #Corte en la Primera y segunda parte del cromosoma
+            if (corte1 in control[:k+1]) and (corte2 in control[k+1:2*k+1]):
+                lista1=[]
+                lista2=[]
+                #Le quite el +1 que estaba aqui en corte2+1
+                for i in range(0, clientes+1):
+                    lista1.append(i)
+                    lista2.append(i)
+                for i in range(k, 2*k):
+                    if cromosomap1[i] in lista1:
+                        lista1.remove(cromosomap1[i])
+                    if cromosomap2[i] in lista2:
+                        lista2.remove(cromosomap2[i])
+                    if cromosomap2[i] in lista1:
+                        lista1.remove(cromosomap2[i])
+                    if cromosomap1[i] in lista2:
+                        lista2.remove(cromosomap1[i])
+                
+                np.random.shuffle(lista1)
+                np.random.shuffle(lista2)
+        
+                i=0
+                while i < k:
+                    cromosomaq1[i]=copy.deepcopy(cromosomap1[i])
+                    cromosomaq2[i]=copy.deepcopy(cromosomap2[i])
+                    i=i+1
+                while i < corte2+1:
+                    cromosomaq1[i]=copy.deepcopy(cromosomap2[i])
+                    cromosomaq2[i]=copy.deepcopy(cromosomap1[i])
+                    if cromosomap1[i] in lista2:
+                        lista2.remove(cromosomap1[i])
+                    if cromosomap2[i] in lista1:
+                        lista1.remove(cromosomap2[i])
+                    i=i+1
+                while i < 2*k:
+                    if (cromosomap1[i] in cromosomap2[k:corte2]) and (len(lista1) >0 ):
+                        cromosomaq1[i]=copy.deepcopy(lista1[0])
+                        lista1.remove(lista1[0])
+                    else: 
+                        cromosomaq1[i]=copy.deepcopy(cromosomap1[i])
+                        if cromosomap1[i] in lista1:
+                            lista1.remove(cromosomap1[i])
+        
+                    if (cromosomap2[i] in cromosomap1[k:corte2] )and (len(lista2) >0 ):
+                        cromosomaq2[i]=copy.deepcopy(lista2[0])
+                        lista2.remove(lista2[0])
+                    else: 
+                        cromosomaq2[i]=copy.deepcopy(cromosomap2[i])
+                        if cromosomap2[i] in lista2:
+                            lista2.remove(cromosomap2[i])
+                    i=i+1
+                while i < 2*k+clientes:
+                    cromosomaq1[i]=copy.deepcopy(cromosomap1[i])
+                    cromosomaq2[i]=copy.deepcopy(cromosomap2[i])
+                    i=i+1
+            #Corte en el Primera y tercera parte del cromosoma
+            if (corte1 in control[:k+1]) and (corte2 in control[2*k+1:2*k+clientes+1]):
+                i=0
+                indice=2*k
+                lista1=[]
+                lista2=[]
+                indicel=0
+                for i in range(2*k, 2*k+clientes):
+                    lista1.append(cromosomap1[i])
+                    lista2.append(cromosomap2[i])
+                i=0
+                while i < 2*k:
+                    cromosomaq1[i]=copy.deepcopy(cromosomap1[i])
+                    cromosomaq2[i]=copy.deepcopy(cromosomap2[i])
+                    i=i+1
+                for j in range(0,clientes):
+                    if (indice >= 2*k) and (indice <=corte2):
+                        cromosomaq1[indice]=copy.deepcopy(cromosomap2[indice])
+                        cromosomaq2[indice]=copy.deepcopy(cromosomap1[indice])
+                        lista1.remove(cromosomap2[indice])
+                        lista2.remove(cromosomap1[indice])
+                        indice=indice+1
+                    else:
+                        if indice < 2*k+clientes:
+                            cromosomaq1[indice]=copy.deepcopy(lista1[indicel])
+                            cromosomaq2[indice]=copy.deepcopy(lista2[indicel])
+                            indicel=indicel+1
+                            indice=indice+1
+                        else:
+                            indice=2*k
+                            cromosomaq1[indice]=copy.deepcopy(lista1[indicel])
+                            cromosomaq2[indice]=copy.deepcopy(lista2[indicel])
+                            indicel=indicel+1
+                            indice=indice+1
+            #Corte en la segunda y tercera parte del cromosoma
+            if (corte1 in control[k+1:2*k+1]) and (corte2 in control[2*k+1:2*k+clientes+1]):
+                i=0
+                indice=2*k
+                lista1=[]
+                lista2=[]
+                listaa1=[]
+                listaa2=[]
+                indicel=0
+                for i in range(2*k, 2*k+clientes):
+                    lista1.append(cromosomap1[i])
+                    lista2.append(cromosomap2[i])
+                i=0
+        
+                for i in range(0, clientes+1):
+                    listaa1.append(i)
+                    listaa2.append(i)
+                for i in range(k, 2*k):
+                    if cromosomap1[i] in listaa1:
+                        listaa1.remove(cromosomap1[i])
+                    if cromosomap2[i] in listaa2:
+                        listaa2.remove(cromosomap2[i])
+                    if cromosomap2[i] in listaa1:
+                        listaa1.remove(cromosomap2[i])
+                    if cromosomap1[i] in listaa2:
+                        listaa2.remove(cromosomap1[i])
+                i=0
+                while i < k:
+                    cromosomaq1[i]=copy.deepcopy(cromosomap1[i])
+                    cromosomaq2[i]=copy.deepcopy(cromosomap2[i])
+                    i=i+1
+                while i < corte1:
+                    if cromosomap1[i] in cromosomap2[corte1:2*k]:
+                        cromosomaq1[i]=copy.deepcopy(listaa1[0])
+                        listaa1.remove(listaa1[0])
+                    else: 
+                        cromosomaq1[i]=copy.deepcopy(cromosomap1[i])
+                        if cromosomap1[i] in listaa1:
+                            listaa1.remove(cromosomap1[i])
+        
+                    if cromosomap2[i] in cromosomap1[corte1:2*k]:
+                        cromosomaq2[i]=copy.deepcopy(listaa2[0])
+                        listaa2.remove(listaa2[0])
+                    else: 
+                        cromosomaq2[i]=copy.deepcopy(cromosomap2[i])
+                        if cromosomap2[i] in listaa2:
+                            listaa2.remove(cromosomap2[i])
+                        
+                    i=i+1
+                while i < 2*k+1:
+                    cromosomaq1[i]=copy.deepcopy(cromosomap2[i])
+                    cromosomaq2[i]=copy.deepcopy(cromosomap1[i])
+                    i=i+1
+                    
+                for j in range(0,clientes):
+                    if (indice >= 2*k) and (indice <=corte2):
+                        cromosomaq1[indice]=copy.deepcopy(cromosomap2[indice])
+                        cromosomaq2[indice]=copy.deepcopy(cromosomap1[indice])
+                        lista1.remove(cromosomap2[indice])
+                        lista2.remove(cromosomap1[indice])
+                        indice=indice+1
+                    else:
+                        if indice < 2*k+clientes:
+                            cromosomaq1[indice]=copy.deepcopy(lista1[indicel])
+                            cromosomaq2[indice]=copy.deepcopy(lista2[indicel])
+                            indicel=indicel+1
+                            indice=indice+1
+                        else:
+                            indice=2*k
+                            cromosomaq1[indice]=copy.deepcopy(lista1[indicel])
+                            cromosomaq2[indice]=copy.deepcopy(lista2[indicel])
+                            indicel=indicel+1
+                            indice=indice+1   
+            #Corregir los que se repiten
+            l1=list(cromosomaq1[k:2*k])
+            l2=list(cromosomaq2[k:2*k])
+            la1=[]
+            la2=[]
+            for i in range(0, clientes+1):
+                if i not in l1:
+                    la1.append(i)
+                if i not in l2:
+                    la2.append(i)
+                
+            for i in range(k,2*k):
+                np.random.shuffle(la1)
+                np.random.shuffle(la2)
+                if cromosomaq1[i] in l1:
+                    if l1.count(cromosomaq1[i]) > 1:
+                        cromosomaq1[i]=la1[0]
+                        la1.remove(la1[0])
+                if cromosomaq2[i] in l2:
+                    if l2.count(cromosomaq2[i]) > 1:
+                        cromosomaq2[i]=la2[0]
+                        la2.remove(la2[0])
+                l1=list(cromosomaq1[k:2*k])
+                l2=list(cromosomaq2[k:2*k])
+        
+        
+            return(cromosomaq1,cromosomaq2)
+                    
+            
+            
+            
+            
+        #MUTACION ENTRADA: 1 CROMOSOMA
+        def mutacion(cromosoma):
+            mutar=np.random.randint(0,2*k+clientes)
+            aux=0
+            aux1=0
+            bandera=0
+            if mutar < k:
+                cromosoma[mutar]=np.random.randint(1,instalaciones+1)
+            else:
+                if mutar < 2*k:
+                    while bandera==0:
+                        aux=np.random.randint(1,clientes+1)
+                        if aux in cromosoma[k:2*k]:
+                            bandera=0
+                        else:
+                            cromosoma[mutar]=copy.deepcopy(aux)
+                            bandera=1
+                else:
+                    while bandera==0:    
+                        aux=np.random.randint(2*k,2*k+clientes)
+                        if aux == mutar:
+                            bandera=0
+                        else:
+                            aux1=copy.deepcopy(cromosoma[aux])
+                            cromosoma[aux]=copy.deepcopy(cromosoma[mutar])
+                            cromosoma[mutar]=copy.deepcopy(aux1)
+                            bandera=1
+            return(cromosoma)
+        
+        
+        
+        #################################################SETUP###########################################################
+        #La poblacion inicial ya esta construida P0
+        
+        fitP=fitObjetivos(fitP,P,N,0)
+        rankeoP=rankeo(fitP,N)
+        fastNonDominatedSort(P, fitP,rankeoP, N)
+        #Ahora se construye una descendencia inicia seleccion / entrecruzamiento / mutacion
+        contA1=0
+        contA2=1
+        croAux1=[0]*(2*k+clientes)
+        croAux2=[0]*(2*k+clientes)
+        cro1=0
+        cro2=0
+        cro3=0
+        cro4=0
+        for i in range(0,N-1):
+            cro1=np.random.randint(0,N)
+            cro2=np.random.randint(0,N)
+            cro3=np.random.randint(0,N)
+            cro4=np.random.randint(0,N)
+            croAux1 , croAux2 = seleccionBTI(P[cro1,:], P[cro2,:], P[cro3,:], P[cro4,:], rankeoP[cro1], rankeoP[cro2], rankeoP[cro3], rankeoP[cro4])
+            
+            if(np.random.random() < probCruzamiento):
+                croAux1,croAux2=cruzamiento(croAux1,croAux2)
+            if(np.random.random() < probMutacion):
+                croAux1=mutacion(croAux1)
+            if(np.random.random() < probMutacion):
+                croAux2=mutacion(croAux2)
+                
+            Q[contA1,:]=copy.deepcopy(croAux1)
+            Q[contA2,:]=copy.deepcopy(croAux2)
+            contA1=contA1+1
+            contA2=contA2+1
+        
+        fitQ=fitObjetivos(fitQ,Q,N,0)
+        rankeoQ=rankeo(fitQ,N)
+        fastNonDominatedSort(Q, fitQ,rankeoQ, N)
+        
+        
+        
+        listaFronteras=[]
+        conteoFronteras=[]
+        #ELEMENTOS DEL EXTERNO
+        Externo=[]
+        FitExterno=[]
+        RankExterno=[]
+        #Lista auxiliar para actualizar el externo
+        la1=[]
+        Fita1=[]
+        #Lista auxiliar secundaria para actualizar el externo
+        la2=[]
+        Fita2=[]
+        i1=0
+        i2=0
+        #ITERACIONES
+        sumatotalfronteras=0
+        iteracion=0
+        #Aqui va un while / do while se la poblacion N esta repleta de frontera 1
+        MAXGEN=1000 #9000 PARA DOS HORAS Y MEDIA -750 para 15 minutos- 50 para 1 minuto
+        GEN=0
+        tiempo=time.time()
+        print(tiempo)
+        
+        while GEN<MAXGEN:
+
+            sumatotalfronteras=0
+            #Unir las dos poblaciones y los fits en una población R
+            
+            #Inicializar la lista de fronteras y de conteo
+            R[0:N,:]=P
+            R[N:2*N,:]=Q
+            fitR[0:N,:]=fitP
+            fitR[N:2*N,:]=fitQ
+            cwdisR[0:N]=cwdisP
+            cwdisR[N:2*N]=cwdisQ
+            #Ranqueo de las fronteras poblacion R
+            rankeoR=rankeo(fitR,2*N)
+            fastNonDominatedSort(R, fitR,rankeoR, 2*N)
+            
+            
+            
+            #Listar la cantidad de fronteras
+            i1=0
+            i2=0
+            for i in range(0,2*N):
+                if rankeoR[i] not in listaFronteras:
+                    listaFronteras.append(int(rankeoR[i]))
+                    conteoFronteras.append(0)
+                    
+            #Calular la crowding distance por fronteras
+            for i in listaFronteras:
+                
+                i1=copy.deepcopy(i2)
+                for j in range(0,2*N):
+                    if rankeoR[j] == i:
+                        i2=j
+                        conteoFronteras[i-1]=conteoFronteras[i-1]+1
+                i2=i2+1
+            
+                cwdisR[i1:i2],R[i1:i2,:],fitR[i1:i2,:]=crowedDistance(R[i1:i2,:],fitR[i1:i2,:])
+                
+            #Elegir los N primeros para la poblacion de padres P
+            acumulado=0
+            ultimaF=0
+            for i in listaFronteras:
+            
+                acumulado=acumulado+conteoFronteras[i-1]
+                if acumulado < N:
+                    ultimaF=i
+                    i1=acumulado
+            
+            ultimaF=ultimaF+1
+            i2=i1+conteoFronteras[ultimaF-1]
+            #Ordenar ultima frontera en orden descendente si i2 es mayor a 10
+            if i2 > N:
+                R[i1:i2,:],fitR[i1:i2,:],cwdisR[i1:i2]=sortCD(R[i1:i2,:],fitR[i1:i2,:],cwdisR[i1:i2] )
+            
+            #Eligir los N primeros para la poblacion P
+            P=R[0:N,:]
+            fitP=fitR[0:N,:]
+            cwdisP=cwdisR[0:N]
+            rankeoP=rankeoR[0:N]
+            
+            
+            #   Construir los hijos
+            
+            contA1=0
+            contA2=1
+            croAux1=[0]*(2*k+clientes)
+            croAux2=[0]*(2*k+clientes)
+            cro1=0
+            cro2=0
+            cro3=0
+            cro4=0
+            for i in range(0,N-1):
+                cro1=np.random.randint(0,N)
+                cro2=np.random.randint(0,N)
+                cro3=np.random.randint(0,N)
+                cro4=np.random.randint(0,N)
+                croAux1 , croAux2 = seleccionCD(P[cro1,:], P[cro2,:], P[cro3,:], P[cro4,:], rankeoP[cro1], rankeoP[cro2], rankeoP[cro3], rankeoP[cro4], cwdisP[cro1],cwdisP[cro2],cwdisP[cro3],cwdisP[cro4])
+                
+                if(np.random.random() < probCruzamiento):
+                    croAux1,croAux2=cruzamiento(croAux1,croAux2)
+                if(np.random.random() < probMutacion):
+                    croAux1=mutacion(croAux1)
+                if(np.random.random() < probMutacion):
+                    croAux2=mutacion(croAux2)
+                    
+                Q[contA1,:]=copy.deepcopy(croAux1)
+                Q[contA2,:]=copy.deepcopy(croAux2)
+                contA1=contA1+1
+                contA2=contA2+1
+            
+            fitQ=fitObjetivos(fitQ,Q,N,iteracion)
+            rankeoQ=rankeo(fitQ,N)
+            fastNonDominatedSort(Q, fitQ,rankeoQ, N)
+            
+            #Operaciones para actualizar externo
+            #Escoger las soluciones con rank=1 en la población P
+            for i in range(0,N):
+                if rankeoP[i]==1:
+                    la1.append(P[i])
+                    Fita1.append(fitP[i])
+            #Unir las soluciones que se encuentran en el externo junto con las soluciones en la la1
+            if (len(Externo)>0):
+                for i in range(0,len(Externo)):
+                    la1.append(Externo[i])
+                    Fita1.append(FitExterno[i])
+            #Realizar y el ordenamiento rankeo en la1
+            ranka1=np.zeros((len(la1),1))
+            ranka1=rankeol(Fita1,len(la1))
+            fastNonDominatedSortl(la1, Fita1,ranka1,len(la1) )
+            #Guardar las soluciones con rank=1 en la2, vaciar el externo
+            for i in range(0,len(la1)):
+                if ranka1[i]==1:
+                    la2.append(la1[i])
+                    Fita2.append(Fita1[i])
+            Externo=[]
+            FitExterno=[]
+            #Actualizar el Externo
+            Externo=copy.deepcopy(la2)
+            FitExterno=copy.deepcopy(Fita2)
+            #Vaciar listas auxiliares    
+            la1=[]
+            Fita1=[]
+            la2=[]
+            Fita2=[]
+        
+            
+            
+            sumatotalfronteras=sum(rankeoP)
+            print(sumatotalfronteras)
+            iteracion=iteracion+1
+            print(rankeoP)
+            print(fitP)
+            final=time.time()
+            GEN=final-tiempo
+        archivo = open("Experimentos.txt","a")
+        archivo.write('\n' +'\n'+"Tamaño poblacion: "+'\t'+ str((N))+"Tamaño final Externo:" +'\t'+ str((len(Externo))) +"Tiempo por réplica:"+'\t' + str((MAXGEN)) )
+        for j in range(0,len(FitExterno)):
+            archivo.write('\n'  + str(("{:,}".format(FitExterno[j][0]).replace(',','x').replace('.',',').replace('x','.')))+'\t'+str(("{:,}".format(FitExterno[j][1]).replace(',','x').replace('.',',').replace('x','.'))))
+        archivo.close()

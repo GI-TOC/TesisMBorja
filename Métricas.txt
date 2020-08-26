@@ -1,0 +1,69 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Tue Aug  4 06:02:18 2020
+
+@author: Majo
+"""
+import pandas as pd #lIBRERÍA PARA IMPORTAR EXCELL
+import numpy as np #LIBRERIA PARA MATRICES Y VECTORES
+from random import randint #LIBRERIA PARA ALEATORIOS
+import math
+import copy
+import time
+############
+TruePareto=np.array(pd.read_excel("Metricas.xlsx", sheetname='TruePareto',  header=None).as_matrix())
+tamañot= TruePareto.shape[0]
+KnownPareto=np.array(pd.read_excel("Metricas.xlsx", sheetname='KnownPareto',  header=None).as_matrix())
+tamañok= KnownPareto.shape[0]
+
+archivo = open("Metricas.txt","a")
+archivo.write('\n' +'\n'+"evaluacion "+'\n' )
+archivo.close()
+    
+def distancia(sol1,sol2):
+    d = math.sqrt(pow((sol1[0]-sol2[0]),2)+pow((sol1[1]-sol2[1]),2))
+    return(d)
+    
+
+print(distancia(TruePareto[0,:],KnownPareto[0,:]))
+
+
+distancias=np.zeros(tamañot)
+sumatoria=0
+DG=0
+MS=0
+
+def DGf():
+    for j in range(0,tamañok):
+        for i in range(0,tamañot):
+            distancias[i]=distancia(TruePareto[i,:],KnownPareto[j,:])
+            sumatoria=min(distancias)
+    return(sumatoria/tamañok)
+
+def MSf():
+    obj1TP=np.zeros(tamañot)
+    obj2TP=np.zeros(tamañot)
+    obj1KP=np.zeros(tamañok)
+    obj2KP=np.zeros(tamañok)
+    
+    for i in range(0,tamañot):
+        obj1TP[i]=TruePareto[i,0]
+        obj2TP[i]=TruePareto[i,1]
+    for i in range(0,tamañok):
+        obj1KP[i]=KnownPareto[i,0]
+        obj2KP[i]=KnownPareto[i,1]
+        
+    MS=math.sqrt(1/2*(  pow((min(max(obj1KP),max(obj1TP)))-max(min(obj1KP),min(obj1TP)) / (max(obj1TP)-min(obj1TP)),2) + pow((min(max(obj2KP),max(obj2TP)))-max(min(obj2KP),min(obj2TP)) / (max(obj2TP)-min(obj2TP)),2) ))
+    return(MS)
+    
+DG=DGf()
+MS=MSf() 
+
+    
+    
+archivo = open("Metricas.txt","a")
+archivo.write('\n'+'DG'+'\t' + str(("{:,}".format(DG).replace(',','x').replace('.',',').replace('x','.')))+'\n'+'MS'+'\t'+str(("{:,}".format(MS).replace(',','x').replace('.',',').replace('x','.'))))
+archivo.close()
+
+
+print('\n'+'DG'+'\t' + str(("{:,}".format(DG).replace(',','x').replace('.',',').replace('x','.')))+'\n'+'MS'+'\t'+str(("{:,}".format(MS).replace(',','x').replace('.',',').replace('x','.'))))

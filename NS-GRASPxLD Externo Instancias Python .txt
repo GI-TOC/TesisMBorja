@@ -1,0 +1,1421 @@
+import pandas as pd #lIBRERÍA PARA IMPORTAR EXCELL
+import numpy as np #LIBRERIA PARA MATRICES Y VECTORES
+from random import randint #LIBRERIA PARA ALEATORIOS
+import math
+import copy
+import time
+
+############################ PARAMETROS DE ENTRADA DEL USUARIO##########################
+#Tamaño de la población inicial N
+N=30
+#Numero de objetivos
+m=2
+iteracion=0  
+instancias=["Instancia1.xlsx","Instancia2.xlsx","Instancia3.xlsx","Instancia4.xlsx","Instancia5.xlsx","Instancia6.xlsx","Instancia7.xlsx","Instancia8.xlsx","Instancia9.xlsx","Instancia10.xlsx","Instancia11.xlsx","Instancia12.xlsx"]
+
+############################## DATOS ##################################################
+for ins in range(0,1): #len(instancias)
+    
+    nombreIns="Instancia2.xlsx"
+    archivo = open("Experimentos.txt","a")
+    archivo.write('\n'+"*******************"+" " +str((nombreIns))+" "+"*******************")
+    archivo.close()
+    replicas=1
+    for repli in range(1,7):#16
+        archivo = open("Experimentos.txt","a")
+        archivo.write('\n' +'\n'+"Replica número "+str((repli)))
+        archivo.close()
+
+        coordclientes=pd.read_excel(nombreIns, sheetname='Clientes',  header=None).as_matrix()
+        coordinstalaciones=pd.read_excel(nombreIns, sheetname='Bodegas',  header=None).as_matrix()
+        numClientes=coordclientes.shape[0]
+        numBodega=coordinstalaciones.shape[0]
+        nodos=numClientes+numBodega
+        
+        
+        #Vehiculos refrigerados, genericos y total
+        kr=3
+        kg=3
+        k=kr+kg
+        #Capacidad vehiculos ck, costofijo cfk, velocidad vehiculos vk, costo fijo por vehiculo cfk
+        capacidadV=np.array((pd.read_excel(nombreIns, sheetname='VehiculoCapacidad',  header=None).as_matrix()).T)[0]
+        costoVehiculo=1000
+        vk=80
+        
+        #Tasa de mantenimiento de frecura
+        tcer=0.134166667
+        tcei=0.5366667
+        
+        #capacidades instalaciones ci, costos de apertura cai
+        vectorCapacidadB=np.array((pd.read_excel(nombreIns, sheetname='CapacidadB',  header=None).as_matrix()).T)[0]
+        vectorCostodeApertura=np.array((pd.read_excel(nombreIns, sheetname='CostoA',  header=None).as_matrix()).T)[0] 
+        
+        
+        #Demanda de los clientes
+        vectorDemanda=np.array((pd.read_excel(nombreIns, sheetname='Demanda',  header=None).as_matrix()).T)[0] 
+        ts=np.array((pd.read_excel(nombreIns, sheetname='TiempoServicio',  header=None).as_matrix()).T)[0]
+        demandaTotal=0
+        for i in range(0,numClientes):
+            demandaTotal=demandaTotal+vectorDemanda[i]
+        
+        #ASPECTOS DE CALIDAD
+        #calidad inicial desde la instalación
+        Ms=100
+        #Tasa de perecibilidad gr y gg vehiculos refrigerados y genericos
+        gr=0.003
+        gg=0.08
+        #Tiempos máximos para garantizar un nivel de calidad mìnimo
+        tr=73.94958321
+        tg=27.7310937
+        
+        
+        centroGravedad=[]
+        #matrizdistancia entre clientes_Instalaciones,  clientes_clientes, matriz de tiempos
+        
+        matrizCostosC_I=np.zeros((numClientes,numBodega))
+        matrizCostosC_C=np.zeros((numClientes,numClientes))
+        for i in range(0,numClientes):
+            for j in range(0,numBodega):
+                matrizCostosC_I[i][j]=math.sqrt(pow((coordinstalaciones[j][1]-coordclientes[i][1]),2)+pow((coordinstalaciones[j][0]-coordclientes[i][0]),2))
+                
+        for i in range(0,numClientes):
+            for j in range(0,numClientes):
+                if(i==j):
+                    matrizCostosC_C[i][j]=0
+                else:
+                    matrizCostosC_C[i][j]=math.sqrt(pow((coordclientes[j][1]-coordclientes[i][1]),2)+pow((coordclientes[j][0]-coordclientes[i][0]),2))
+        
+        
+        #Matriz de tiempos de recorrido
+        mtrC_I=np.zeros((numClientes,numBodega))
+        mtrC_C=np.zeros((numClientes,numClientes))
+        
+        for i in range(0,numClientes):
+            for j in range(0,numBodega):
+                mtrC_I[i][j]=matrizCostosC_I[i][j]/vk
+        
+        for i in range(0,numClientes):
+            for j in range(0,numClientes):
+                mtrC_C[i][j]=matrizCostosC_C[i][j]/vk
+        
+        
+        ########################### PREPARAR LOS PARAMETROS PARA LAS SOLUCIONES ORIENTADAS A OBJETOS############################################
+        #Variables para guardar las capacidades y las posiciones de las bodegas con mayor y menor capacidad
+        capBMa=0
+        CapBMi=0
+        BodegaMa=0
+        BodegaMe=0
+        
+        vehiculos=kr+kg #Propios #ELIMINAR
+        costoSubCon=0 #ELIMINAR
+        lrc=2#INGRESADA POR EL USUARIO LISTA RESTRINGIDA DE CANDIDATOS
+        NCSC=3# INGRESAR EL NÚMEOR DE SOLUCIONES A COMPARAR
+                
+                
+                
+        #PREPARAR EL ESPACIO PARA LAS SOLUCIONES
+        matrizDensidadC_B=[]
+        matrizDensidadC_C=np.zeros((numClientes,numClientes))
+        demandaTotal=sum(vectorDemanda)
+                
+                
+        def BodegaMayorCap(vectorCapacidadB,numBodega):
+            cap=vectorCapacidadB[0]
+            b=0
+            for i in range(0,numBodega):
+                if (vectorCapacidadB[i]>cap):
+                    cap=vectorCapacidadB[i]
+                    b=i
+                return cap, b
+                
+        def BodegaMenorCap(vectorCapacidadB,numBodega):
+            cap=vectorCapacidadB[0]
+            b=0
+            for i in range(0,numBodega):
+                if (cap>vectorCapacidadB[i]):
+                    cap=vectorCapacidadB[i]
+                    b=i
+            return cap, b
+                
+        capBMa,BodegaMa=BodegaMayorCap(vectorCapacidadB,numBodega)
+        capBMe,BodegaMe=BodegaMenorCap(vectorCapacidadB,numBodega)
+        #Determinar un numero maximo de bodegas a abrir de acuerdo con las demandas y de la que menor capacidad tenga
+        numBodegasAbrir=demandaTotal/capBMe
+        numBodegasAbrir=math.ceil(numBodegasAbrir)
+                
+                
+                
+        #Centro de gravedad
+        def CentroG(coordinstalaciones,centroGravedad,vectorCapacidadB):
+            sumy=0
+            sumx=0
+            sumT=0
+            b,c=np.shape(coordinstalaciones)
+            for i in range(0,b):
+                for j in range(0,c):
+                    if(j==0):
+                        sumx=sumx+vectorCapacidadB[i]*coordinstalaciones[i][0]
+                    if(j==1):
+                        sumy=sumy+vectorCapacidadB[i]*coordinstalaciones[i][1]
+                        
+                sumT=sumT+vectorCapacidadB[i]
+            centroGravedad.append(sumx/sumT)
+            centroGravedad.append(sumy/sumT)
+            
+        CentroG(coordinstalaciones,centroGravedad,vectorCapacidadB)
+                
+                
+        CostosCG=[]
+        for i in range(0,numClientes):
+            au=0
+            au=math.sqrt(pow((centroGravedad[1]-coordclientes[i][1]),2)+pow((centroGravedad[0]-coordclientes[i][0]),2))
+            CostosCG.append(au)
+                
+        #Funcion para determinar la matriz de densidad de las instalaciones
+        def M1(CostosCG,numClientes,capBMa,vectorDemanda,matrizDensidadC_B,numBodega):
+            for i in range(0,numClientes):
+                au=0
+                au=abs(capBMa-vectorDemanda[i])/CostosCG[i]
+                matrizDensidadC_B.append(au)
+                
+        M1(CostosCG,numClientes,capBMa,vectorDemanda,matrizDensidadC_B,numBodega)
+                
+        #Funcion para determinar la matriz de densidad de los clientes
+        def M2(matrizCostosC_C,numClientes,capBMa,vectorDemanda,matrizDensidadC_B,BodegaMa,matrizDensidadC_C):
+            for i in range(0,numClientes):
+                for j in range(0,numClientes):
+                    if(i!=j):
+                        matrizDensidadC_C[i,j]=abs(capBMa-(vectorDemanda[i]+vectorDemanda[j]))/(matrizCostosC_C[i,j]*matrizDensidadC_B[i]*matrizDensidadC_B[j])
+                    else:
+                        matrizDensidadC_C[i,j]=0
+                
+        M2(matrizCostosC_C,numClientes,capBMa,vectorDemanda,matrizDensidadC_B,BodegaMa,matrizDensidadC_C)
+        
+        #Clase objeto para valorar el costo de apertura y su capacidad
+        class RaBodega(object):
+            def __init__(self):
+                self.Nbodega=0
+                self.Razon=0
+            def setNbodega(self,n):
+                self.Nbodega=n
+            def setRazon(self,r):
+                self.Razon=r
+                
+                
+                
+                
+        #RAZON COSTO/CAPACIDAD
+        def razonBodegaCosto(vectorCostodeApertura,vectorCapacidadB,numBodega):
+            bRazon=[]
+            for j in range(0,numBodega):
+                bRazon.append(RaBodega())
+                    
+            for i in range(0,numBodega):
+                bRazon[i].setNbodega(i)
+                bRazon[i].setRazon(vectorCostodeApertura[i]/vectorCapacidadB[i])
+            auxiliar=RaBodega()
+            #Ordenar las bodegas de manera ascendente segun su razon
+            for i in range(0,numBodega):
+                for j in range(0,numBodega):
+                    auxiliar=copy.deepcopy(bRazon[i])
+                    if bRazon[j].Razon>bRazon[i].Razon:
+                        bRazon[i]=bRazon[j]
+                        bRazon[j]=auxiliar
+            orden=[]
+            for i in range(0,numBodega):
+                orden.append(bRazon[i].Nbodega)
+            return orden
+        #Orden de las bodegas segun su razon, entre mas economica mejor, entre menor razon mejor        
+        orden=razonBodegaCosto(vectorCostodeApertura,vectorCapacidadB,numBodega) 
+        reespaldOrden=copy.deepcopy(orden)
+                  
+                
+                
+        #VECTOR DE OBJETOS
+        class Cliente(object):
+            def __init__(self):
+                self.NCliente=0
+                self.Demanda=0
+                self.NumVehiculo=0
+                self.Secuencia=0
+                self.NBodega=-1
+            def setNCliente(self,n):
+                self.NCliente=n
+            def setDemanda(self,d):
+                self.Demanda=d
+            def setNumVehiculo(self,v):
+                self.NumVehiculo=v
+            def setSecuencia(self,s):
+                self.Secuencia=s
+            def setNBodega(self,b):
+                self.NBodega=b
+            def setTipo(self,c):
+                self.Tipo=c
+                
+        #LISTA RUTA-VEHICULOS
+        class Ruta(object):
+            def __init__(self):
+                self.NumVehiculo=0
+                self.PrimerCliente=0
+                self.UltimoCliente=0
+                self.DemandaRuta=0
+                self.NBodega=-1
+                self.SubCon=0
+            def setNumVehiculo(self,v):
+                self.NumVehiculo=v
+            def setPrimerCliente(self,p):
+                self.PrimerCliente=p
+            def setUltimoCliente(self,u):
+                self.UltimoCliente=u
+            def setDemandaRuta(self,d):
+                self.DemandaRuta=d
+            def setNBodega(self,b):
+                self.NBodega=b
+            def setTipo(self,c):
+                self.Tipo=c
+                        
+                        
+        def Sorteo(orden,numBodegasAbrir,lrc):
+            aux=[]
+            for i in range(0,numBodegasAbrir):
+                aux.append(0)
+            for i in range(0,numBodegasAbrir):
+                if(len(orden)>=lrc):
+                    sor=randint(0,lrc-1)
+                else:
+                    sor=0     
+                aux[i]=copy.deepcopy(orden[sor])
+                orden.pop(sor)
+            return aux
+                    
+                
+        #GIANT TOUR...!!!
+        def solucionTSP(vectorDemanda,numClientes,matrizDensidadC_C,vectorClientes):
+            aleatorio=randint(0,numClientes-1)
+            listaElegibles=[]
+            for i in range(0,numClientes):
+                listaElegibles.append(i)
+            listaElegibles.remove(aleatorio)
+            aux=1
+            a=0
+            maximo=0
+            aux2=0
+            vectorClientes[0].setNCliente(aleatorio+1)
+            vectorClientes[0].setDemanda(vectorDemanda[aleatorio])
+            while(aux<=(numClientes-1)):
+                for i in range(0,numClientes):
+                    if(i in listaElegibles):
+                        if(matrizDensidadC_C[aleatorio,i]>maximo):
+                            aux2=i
+                            maximo=matrizDensidadC_C[aleatorio,i]
+                            a=1
+                if(a==1):    
+                    vectorClientes[aux].setNCliente(aux2+1)
+                    vectorClientes[aux].setDemanda(vectorDemanda[aux2])
+                    aleatorio=aux2
+                    listaElegibles.remove(aux2)
+                    maximo=0
+                aux=aux+1
+                i=0
+                a=0
+                                
+                
+                
+        #SPLIT TSPS---SPLIT
+                
+        def solucionTSPSplit(vectorClientes,numClientes,capacidadV,vehiculos,listaVehiculo):
+            cap=capacidadV
+            NVehiculo=1
+        
+            #Vehiculos refrigerados kr y genéricoskg 
+            listaTipo=[]
+            for i in range(0,vehiculos):
+                listaTipo.append(i)
+                
+            listaAsignables=[]
+            for i in range(0,numClientes):
+                listaAsignables.append(i)
+            se=1
+            aux2=0
+            demandaR=0
+            ultimo=0
+            primer=0
+            while len(listaAsignables)>0:
+                np.random.shuffle(listaTipo)
+                for i in range(0,numClientes):
+                    if(i in listaAsignables):
+                        if(vectorClientes[i].Demanda<=cap):
+                            vectorClientes[i].setNumVehiculo(NVehiculo)
+                            cap=cap-vectorClientes[i].Demanda
+                            listaAsignables.remove(i)
+                            demandaR=vectorClientes[i].Demanda+demandaR
+                            ultimo=vectorClientes[i].NCliente
+                            vectorClientes[i].setSecuencia(se)
+                            if listaTipo[0] < kr:
+                                vectorClientes[i].setTipo(0)
+                            else:
+                                vectorClientes[i].setTipo(1)
+                            if(se==1):
+                                primer=vectorClientes[i].NCliente
+                            se=se+1
+        
+        
+                listaVehiculo.append(Ruta())
+                listaVehiculo[aux2].setNumVehiculo(NVehiculo)
+                listaVehiculo[aux2].setPrimerCliente(primer)
+                listaVehiculo[aux2].setUltimoCliente(ultimo)
+                listaVehiculo[aux2].setDemandaRuta(demandaR)
+                #Indica que tipo de vehiculo r/g lleva la ruta
+                if listaTipo[0] < kr:
+                    listaVehiculo[aux2].setTipo(0)
+                else:
+                    listaVehiculo[aux2].setTipo(1)
+                    
+                if listaTipo[0] in listaTipo:
+                    listaTipo.remove(listaTipo[0])
+        
+        
+                aux2=aux2+1
+                NVehiculo=NVehiculo+1
+                se=1
+                demandaR=0
+                cap=capacidadV
+                    
+                            
+        #LOCATION STEP
+        def localizacion(vectorClientes,numClientes,capacidadV,vehiculos,listaVehiculo,orden,vectorCapacidadB,numBodegasAbrir,matrizCostosC_B):
+            veCapacidadActual=[]
+            distancia=math.inf
+                    
+                    
+            ban=0
+            for i in range(0,numBodegasAbrir):
+                veCapacidadActual.append(vectorCapacidadB[orden[i]])
+            #print(veCapacidadActual)
+            for i in range(0,len(listaVehiculo)):
+                for j in range(0,numBodegasAbrir):
+                    d=matrizCostosC_B[listaVehiculo[i].PrimerCliente-1][orden[j]]+matrizCostosC_B[listaVehiculo[i].UltimoCliente-1][orden[j]]
+                    if(listaVehiculo[i].DemandaRuta<=veCapacidadActual[j]):
+                        if(d<distancia):
+                            distancia=d
+                            jota=j
+                            ban=1
+                if(ban==1):
+                    veCapacidadActual[jota]=veCapacidadActual[jota]-listaVehiculo[i].DemandaRuta
+                    listaVehiculo[i].setNBodega(orden[jota])
+                    ban=0
+                distancia=math.inf
+            for i in range(0,len(listaVehiculo)):
+                for j in range(0,numClientes):
+                    if(vectorClientes[j].NumVehiculo==listaVehiculo[i].NumVehiculo):
+                        vectorClientes[j].setNBodega(listaVehiculo[i].NBodega)
+                        
+        
+        #FUNCION DE EVALUACION
+        def evaluacionO1(vectorClientes,listaVehiculo):
+            fit=0
+            bodegasAbiertas=[]
+            sumaCantidad=0
+            for i in range(0,numClientes):
+                if(vectorClientes[i].NBodega not in bodegasAbiertas):
+                    bodegasAbiertas.append(vectorClientes[i].NBodega)
+            for i in range(0, len(bodegasAbiertas)):
+                fit=fit+vectorCostodeApertura[bodegasAbiertas[i]]
+            bodegasAbiertas.clear()
+            for i in range(0,len(listaVehiculo)):
+                sumaCantidad=0
+                p=listaVehiculo[i].PrimerCliente
+                u=listaVehiculo[i].UltimoCliente
+                bod=listaVehiculo[i].NBodega
+                #con=listaVehiculo[i].SubCon
+                ante=p-1
+                if(bod not in bodegasAbiertas):
+                    bodegasAbiertas.append(bod)
+                for j in range(0,numClientes):
+                    if(vectorClientes[j].NumVehiculo==listaVehiculo[i].NumVehiculo):
+                        if(vectorClientes[j].NCliente==p):
+                            fit=fit+matrizCostosC_I[p-1][bod]
+                        if(vectorClientes[j].NCliente==u):
+                            fit=fit+matrizCostosC_I[u-1][bod]
+                        if(u!=p and vectorClientes[j].NCliente!=p ):
+                            fit=fit+matrizCostosC_C[ante][vectorClientes[j].NCliente-1]
+                            ante=vectorClientes[j].NCliente-1
+                        sumaCantidad=sumaCantidad+vectorClientes[j].Demanda
+                
+                #Costo fijo de usar un vehiculo
+                fit=fit+costoVehiculo
+                #Cantidades en la ruta
+                aux=0
+                for j in range(0,numClientes):
+                    aux=0
+                    if(vectorClientes[j].NumVehiculo==listaVehiculo[i].NumVehiculo):
+                        if (vectorClientes[j].Secuencia==1) and (vectorClientes[j].Tipo == 0):
+                            #AQUI SOLO EVATUA QUE ES REFRIGERADO
+                            fit=fit+matrizCostosC_I[vectorClientes[j].NCliente-1][vectorClientes[j].NBodega]*sumaCantidad*(tcer/capacidadV)
+                            aux=vectorClientes[j].NCliente-1
+                            sumaCantidad=sumaCantidad-vectorClientes[j].Demanda
+                        else:
+                            fit=fit+matrizCostosC_C[aux][vectorClientes[j].NCliente-1]*sumaCantidad*(tcer/capacidadV)
+                            aux=vectorClientes[j].NCliente-1
+                            sumaCantidad=sumaCantidad-vectorClientes[j].Demanda
+                #Costo cantidades por bodega
+                sumaBodega=0
+                for j in range(0,numClientes):
+                    sumaBodega=0
+                    for i in bodegasAbiertas:
+                        if vectorClientes[j].NBodega == i:
+                            sumaBodega=sumaBodega+vectorClientes[j].Demanda
+                    fit=fit+(tcei/vectorCapacidadB[i])*sumaBodega
+                    
+            return(fit)
+        
+        def evaluacionO2(vectorClientes,listaVehiculo):
+            sumaCalidad=0
+            aux=0
+            g=0
+            for i in range(0,len(listaVehiculo)):
+                aux=0
+                for j in range(0,numClientes):
+                    if(vectorClientes[j].NumVehiculo==listaVehiculo[i].NumVehiculo):
+                        if vectorClientes[j].Tipo == 0:
+                            g=gr
+                        else:
+                            g=gg
+                        
+                        if vectorClientes[j].NCliente == 1:
+                            sumaCalidad=sumaCalidad + Ms*math.exp(-1*g*(mtrC_I[vectorClientes[j].NCliente-1,vectorClientes[j].NBodega]+ts[vectorClientes[j].NCliente-1]))
+                            aux=vectorClientes[j].NCliente-1
+                        else:
+                            sumaCalidad=sumaCalidad + Ms*math.exp(-1*g*(mtrC_C[aux,vectorClientes[j].NCliente-1]+ts[vectorClientes[j].NCliente-1]))
+                            aux=vectorClientes[j].NCliente-1
+            sumaCalidad=sumaCalidad/len(vectorClientes)         
+            return(sumaCalidad)
+        
+        def penalizacionO1(vectorClientes,listaVehiculo):
+            lb=[]
+            demanda=0
+            penalizacion=0
+            for i in range(0,len(listaVehiculo)):
+                if listaVehiculo[i].NBodega not in lb:
+                    lb.append(listaVehiculo[i].NBodega)
+            for i in range(0,len(lb)):
+                demanda=0
+                for j in range(0,len(listaVehiculo)):
+                    if listaVehiculo[j].NBodega == lb[i]:
+                        demanda=demanda+listaVehiculo[j].DemandaRuta
+                if demanda - vectorCapacidadB[lb[i]] < 0:
+                    penalizacion=(demanda - vectorCapacidadB[lb[i]])*(-1)*vehiculos*vehiculos
+            
+            tiempok=np.zeros((len(listaVehiculo),1))
+            sumaPena=0
+            aux=0
+            for i in range(0,len(listaVehiculo)):
+                aux=0
+                for j in range(0,numClientes):
+                    if(vectorClientes[j].NumVehiculo==listaVehiculo[i].NumVehiculo):
+                        if vectorClientes[j].NCliente == 1:
+                            #SOLO EVALUAREFRIGERADOS
+                            tiempok[i]=tiempok[i] + mtrC_I[vectorClientes[j].NCliente-1,vectorClientes[j].NBodega]+ts[vectorClientes[j].NCliente-1]
+                            aux=vectorClientes[j].NCliente-1
+                        else:
+                            tiempok[i]=tiempok[i] + mtrC_C[aux,vectorClientes[j].NCliente-1]+ts[vectorClientes[j].NCliente-1]
+                            aux=vectorClientes[j].NCliente-1
+            for i in range(0,len(listaVehiculo)):
+                if listaVehiculo[i].Tipo == 0:
+                    if tiempok[i] - tr > 0:
+                        sumaPena=sumaPena*vehiculos #*iteracion
+                else:
+                    if tiempok[i] - tg > 0:
+                        sumaPena=sumaPena*vehiculos #*iteracion
+            return(sumaPena+penalizacion)
+            
+        def penalizacionO2(vectorClientes,listaVehiculo):
+            tiempok=np.zeros((len(listaVehiculo),1))
+            sumaPena=0
+            aux=0
+            for i in range(0,len(listaVehiculo)):
+                aux=0
+                for j in range(0,numClientes):
+                    if(vectorClientes[j].NumVehiculo==listaVehiculo[i].NumVehiculo):
+                        if vectorClientes[j].NCliente == 1:
+                            #SOLO EVALUAREFRIGERADOS
+                            tiempok[i]=tiempok[i] + mtrC_I[vectorClientes[j].NCliente-1,vectorClientes[j].NBodega]+ts[vectorClientes[j].NCliente-1]
+                            aux=vectorClientes[j].NCliente-1
+                        else:
+                            tiempok[i]=tiempok[i] + mtrC_C[aux,vectorClientes[j].NCliente-1]+ts[vectorClientes[j].NCliente-1]
+                            aux=vectorClientes[j].NCliente-1
+            for i in range(0,len(listaVehiculo)):
+                if listaVehiculo[i].Tipo == 0:
+                    if tiempok[i] - tr > 0:
+                        sumaPena=sumaPena*vehiculos*vehiculos #*iteracion
+                else:
+                    if tiempok[i] - tg > 0:
+                        sumaPena=sumaPena*vehiculos*vehiculos #*iteracion
+        
+            return(sumaPena)
+            
+             
+        def CrearSolucion(orden):
+            pena2=0
+            vectorClientes=[]
+            for i in range(0, numClientes):
+                vectorClientes.append(Cliente())       
+            #orden=Sorteo(orden,numBodegasAbrir,lrc)
+            solucionTSP(vectorDemanda,numClientes,matrizDensidadC_C,vectorClientes)
+            listaVehiculo=[]
+            solucionTSPSplit(vectorClientes,numClientes,capacidadV,vehiculos,listaVehiculo)
+            localizacion(vectorClientes,numClientes,capacidadV,vehiculos,listaVehiculo,orden,vectorCapacidadB,numBodegasAbrir,matrizCostosC_I)
+            vectorClientes.sort(key=lambda NumVehiculo:NumVehiculo.NumVehiculo)
+            fit1=evaluacionO1(vectorClientes,listaVehiculo)
+            fit2=evaluacionO2(vectorClientes,listaVehiculo)
+            pena2=penalizacionO2(vectorClientes,listaVehiculo)
+            fit2=fit2+pena2
+            return(vectorClientes,listaVehiculo,fit1,fit2)
+        
+        def Evaluacion(vectorClientes,listaVehiculo):
+            fit1=copy.deepcopy(evaluacionO1(vectorClientes,listaVehiculo))
+            fit2=evaluacionO2(vectorClientes,listaVehiculo)
+            pena1=penalizacionO1(vectorClientes,listaVehiculo)
+            pena2=penalizacionO2(vectorClientes,listaVehiculo)
+            fit1=fit1+pena1
+            fit2=fit2+pena2
+            return(fit1,fit2)
+        #RANKEO
+        
+        def rankeo(fit,tamaño):
+             
+        
+            #VECTOR DE SOLUCIONES QUE DOMINAN A LA SOLUCION ACTUAL EVALUADA NP
+            ns=np.zeros((tamaño,1))
+            nsAux=np.zeros((tamaño,1))
+            #Vector de rankeo de las soluciones
+            rank=np.zeros((tamaño,1))
+            #MATRIZ DE SOLUCIONES QUE SON DOMINADAS POR LA SOLUCION ACTUAL EVALUADA
+            sp=np.zeros((tamaño,tamaño))
+            listaP=[]
+        
+            #Evaluación de dominancia y no dominancia
+            for i in range(0,tamaño):
+                listaP.append(i)
+                for j in range(0,tamaño):
+                    ban=0
+                    if fit[i,0] < fit[j,0]:
+                        ban=ban+1
+                    if fit[i,1] > fit[j,1]:
+                        ban=ban+1
+                    if i!=j:
+                        if ban==2:
+                            sp[i,j]=1
+            for i in range(0,tamaño):
+                for j in range(0,tamaño):
+                    ns[j]=ns[j]+sp[i,j]
+            nsAux=copy.deepcopy(ns)
+        
+            #Rankeo de las fronteras
+            #mientras se identifican todas las fronteras
+            
+            listaF=[]
+            frontera=1
+            listaux=[]
+            for i in range(0,N):
+                listaux.append(ns[i])
+                
+            while (len(listaP) >0) and (ban==0):
+                listaF=[]
+                for i in range(0,tamaño):
+                    
+                    if (ns[i]==0) and (i in listaP):
+                        
+                        for j in range(0,tamaño):
+                            if sp[i,j]==1:
+                                listaF.append(j)
+                        listaP.remove(i)
+                        rank[i]=frontera
+                        
+                for z in range(0,tamaño):
+                    if z in listaF:
+                        nsAux[z]=nsAux[z]-listaF.count(z)
+                ns=copy.deepcopy(nsAux)
+                if frontera > 2*N:
+                    ban=1
+                frontera=frontera+1
+            return(rank)
+        
+        def fastNonDominatedSort(poblacion, fit,rankeop, tamaño,rutas):
+            #Ordenar la población con las fronteras de menor a mayor
+            #Ordenar tambien sus valores asociados de fit, poblacion, rankeo, 
+            aux=0
+            aux1=np.zeros((1,m))
+            aux2=Cliente()
+            #np.zeros((1,2*k+numClientes))
+            aux3=Ruta()
+            #np.zeros((1,len(rutas)))
+            for i in range (0, tamaño):
+                for j in range(0, tamaño):
+                    if rankeop[j] > rankeop[i]:
+                        #Intercambiar rankeo
+                        aux=copy.deepcopy(rankeop[i])
+                        rankeop[i]=copy.deepcopy(rankeop[j])
+                        rankeop[j]=copy.deepcopy(aux)
+                        #Intercambiar fit
+                        aux1=copy.deepcopy(fit[i,:])
+                        fit[i,:]=copy.deepcopy(fit[j,:])
+                        fit[j,:]=copy.deepcopy(aux1)
+                        #Intercambiar Clientes
+                        aux2=copy.deepcopy(poblacion[i])
+                        poblacion[i]=copy.deepcopy(poblacion[j])
+                        poblacion[j]=copy.deepcopy(aux2)
+                        #Intercambiar rutas
+                        aux3=copy.deepcopy(rutas[i])
+                        rutas[i]=copy.deepcopy(rutas[j])
+                        rutas[j]=copy.deepcopy(aux3)
+        
+        
+        
+        
+        
+        
+        
+        def rankeol(fit,tamaño):
+             
+        
+            #VECTOR DE SOLUCIONES QUE DOMINAN A LA SOLUCION ACTUAL EVALUADA NP
+            ns=np.zeros((tamaño,1))
+            nsAux=np.zeros((tamaño,1))
+            #Vector de rankeo de las soluciones
+            rank=np.zeros((tamaño,1))
+            #MATRIZ DE SOLUCIONES QUE SON DOMINADAS POR LA SOLUCION ACTUAL EVALUADA
+            sp=np.zeros((tamaño,tamaño))
+            listaP=[]
+        
+            #Evaluación de dominancia y no dominancia
+            for i in range(0,tamaño):
+                listaP.append(i)
+                for j in range(0,tamaño):
+                    ban=0
+                    if fit[i][0] < fit[j][0]:
+                        ban=ban+1
+                    if fit[i][1] > fit[j][1]:
+                        ban=ban+1
+                    if i!=j:
+                        if ban==2:
+                            sp[i,j]=1
+            for i in range(0,tamaño):
+                for j in range(0,tamaño):
+                    ns[j]=ns[j]+sp[i,j]
+            nsAux=copy.deepcopy(ns)
+        
+            #Rankeo de las fronteras
+            #mientras se identifican todas las fronteras
+            
+            listaF=[]
+            frontera=1
+            listaux=[]
+            for i in range(0,tamaño):
+                listaux.append(ns[i])
+                
+            while (len(listaP) >0) and (ban==0):
+                listaF=[]
+                for i in range(0,tamaño):
+                    
+                    if (ns[i]==0) and (i in listaP):
+                        
+                        for j in range(0,tamaño):
+                            if sp[i,j]==1:
+                                listaF.append(j)
+                        listaP.remove(i)
+                        rank[i]=frontera
+                        
+                for z in range(0,tamaño):
+                    if z in listaF:
+                        nsAux[z]=nsAux[z]-listaF.count(z)
+                ns=copy.deepcopy(nsAux)
+                if frontera > 2*tamaño:
+                    ban=1
+                frontera=frontera+1
+            return(rank)
+            
+        def fastNonDominatedSortl(poblacion, fit,rankeop, tamaño):
+            #Ordenar la población con las fronteras de menor a mayor
+            #Ordenar tambien sus valores asociados de fit, poblacion, rankeo, 
+            aux=0
+            aux1=[]
+            aux2=Cliente()
+            for i in range (0, tamaño):
+                for j in range(0, tamaño):
+                    if rankeop[j] > rankeop[i]:
+                        #Intercambiar rankeo
+                        aux=copy.deepcopy(rankeop[i])
+                        rankeop[i]=copy.deepcopy(rankeop[j])
+                        rankeop[j]=copy.deepcopy(aux)
+                        #Intercambiar fit
+                        aux1=copy.deepcopy(fit[i])
+                        fit[i]=copy.deepcopy(fit[j])
+                        fit[j]=copy.deepcopy(aux1)
+                        #Intercambiar Cromosoma
+                        aux2=copy.deepcopy(poblacion[i])
+                        poblacion[i]=copy.deepcopy(poblacion[j])
+                        poblacion[j]=copy.deepcopy(aux2)
+        ###############  OPERADORES DE LOGICA DIFUSA ################################
+        #Distancia maxima entre soluciones
+            #Esta distancia representa la resta entre el liminta superior menos el limite inferior
+            #Distancia de un vector represetativo de tres secciones, en la primera de tamaño VEHICULOS contiene el numero de la bodega
+            #la segunda seccion de tamaño VEHICULOS que contiene un 0 si el vehiculo es refrigerado y un 1 si es generico
+            
+        distanciaMax=vehiculos*2+numClientes*numClientes+numBodega*vehiculos
+            #sE CONSIDERA QUE ES UNA DISTANCIA CORTA SI ESTA POR DEBAJO DE ESE VALOR
+        distanciaCorta=0.1*distanciaMax
+        print(distanciaMax)
+        print(distanciaCorta)
+        
+        #Determinar la distancia entre dos soluciones
+        def distanciaSol(vectorClientes1,listaVehiculo1,vectorClientes2,listaVehiculo2):
+            vAux1=np.zeros((vehiculos*2+numClientes,1))
+            vAux2=np.zeros((vehiculos*2+numClientes,1))
+            #SOLUCION 1
+            #indice auxiliar
+            i=0
+            z=vehiculos
+            
+            for j in range(0, len(listaVehiculo1)):
+                vAux1[i]=listaVehiculo1[j].NBodega
+                vAux1[z]=listaVehiculo1[j].Tipo
+                i=i+1
+                z=z+1
+            i=vehiculos*2
+            for j in range(0,numClientes):
+                vAux1[i]=vectorClientes1[j].NCliente
+                i=i+1
+            #SOLICION 2
+            i=0
+            z=vehiculos
+            for j in range(0, len(listaVehiculo2)):
+                vAux2[i]=listaVehiculo2[j].NBodega
+                vAux2[z]=listaVehiculo2[j].Tipo
+                i=i+1
+                z=z+1  
+            i=vehiculos*2
+            for j in range(0,numClientes):
+                vAux2[i]=vectorClientes2[j].NCliente
+                i=i+1
+        
+            sumaTotal=0
+            for i in range(vehiculos*2+numClientes):
+                sumaTotal=sumaTotal+pow(vAux1[i]-vAux2[i],2)
+        
+            sumaTotal=math.sqrt(sumaTotal)
+        
+            return(sumaTotal)
+            
+            
+        #OPERADORES DE LOGICA DIFUSA
+        #Antecedentes
+            #CercaBuena (distancia menor que el parametro distanciaCorta y en la frontera 1)
+            #CercaMala (distancia menor que el parametro y no está en la frontera 1)
+            #LejosBuena (distancia mayor que el parametro y en la frontera 1)
+            #LejosMala (distancia mayor que el parametro y no esta en la frontera 1)
+        #Consecuentes
+            #Acercar
+            #Alejar 
+            #BusquedaLocal
+                #Mover cliente a otra ruta
+                #Intercambiar dos clientes
+                #Cerrar una bodega y abrir otra
+                #Abrir otra bodega
+            #Nueva solucion  (METODO CREAR SOLUCION)     
+        
+        #BUSQUEDA LOCAL
+            #Se detiene cuando se mejora en uno de los dos objetivos
+        def moverCliente(vectorClientes,listaVehiculo):
+            cli1=np.random.randint(0,numClientes)
+            rut=-1
+            bod=0
+            for i in range(0,len(listaVehiculo)):
+                if vectorClientes[cli1].NumVehiculo == i+1:
+                    if listaVehiculo[i].DemandaRuta + vectorClientes[cli1].Demanda < capacidadV:
+                        rut=i
+            #EVALUAR QUE SE ELIJA LA PRIMERA RUTA EN DONDE QUEPA EL CLIENTE
+            #Verificar bodega
+            
+            for i in range(0,len(listaVehiculo)):
+                if listaVehiculo[rut].NBodega==listaVehiculo[i].NBodega:
+                    bod=bod+listaVehiculo[i].DemandaRuta
+            if vectorClientes[cli1].NBodega==listaVehiculo[rut].NBodega and rut>=0:
+                bod=bod-vectorClientes[cli1].Demanda             
+            if bod + vectorClientes[cli1].Demanda <= vectorCapacidadB[listaVehiculo[rut].NBodega] and rut>=0:
+                listaVehiculo[rut].DemandaRuta=copy.deepcopy(listaVehiculo[rut].DemandaRuta + vectorClientes[cli1].Demanda)
+                listaVehiculo[vectorClientes[cli1].NumVehiculo -1].DemandaRuta=copy.deepcopy(listaVehiculo[vectorClientes[cli1].NumVehiculo -1].DemandaRuta - vectorClientes[cli1].Demanda)
+                vectorClientes[cli1].NumVehiculo=copy.deepcopy(rut+1)
+                vectorClientes[cli1].NBodega=copy.deepcopy(listaVehiculo[rut].NBodega)
+                vectorClientes[cli1].Tipo=copy.deepcopy(listaVehiculo[rut].Tipo)
+                
+                #Actualizar vector cliente y rutas
+                aux=Cliente()
+                for i in range(0,numClientes):
+                    for j in range(0,numClientes):
+                        if vectorClientes[i].NumVehiculo < vectorClientes[j].NumVehiculo:
+                            aux=copy.deepcopy(vectorClientes[i].NumVehiculo)
+                            vectorClientes[i].NumVehiculo=copy.deepcopy(vectorClientes[j].NumVehiculo)
+                            vectorClientes[j].NumVehiculo=copy.deepcopy(aux)
+                
+                
+                se=0
+                for j in range(0, len(listaVehiculo)):
+                        listaVehiculo[j].PrimerCliente=0
+                for i in range(0,len(listaVehiculo)):
+                    se=0
+                    for j in range(0, numClientes):
+                        if vectorClientes[j].NumVehiculo==i+1:
+                            se=se+1
+                            vectorClientes[j].Secuencia=copy.deepcopy(se)
+                            if listaVehiculo[i].PrimerCliente==0:
+                                listaVehiculo[i].PrimerCliente=copy.deepcopy(i+1)
+                            else:
+                                listaVehiculo[i].UltimoCliente=copy.deepcopy(i+1)
+                            vectorClientes[j].Tipo =copy.deepcopy(listaVehiculo[i].Tipo)
+                            vectorClientes[j].NBodega=copy.deepcopy(listaVehiculo[i].NBodega)
+                                
+                        
+                        
+                        
+                        
+                        
+            #Se cambia el tipo de vehiculo
+        def cambiarTipo(vectorClientes,listaVehiculo):
+            refri=copy.deepcopy(kr)
+            generi=copy.deepcopy(kg)
+            ban=0
+            for i in range(0,len(listaVehiculo)):
+                if listaVehiculo[i].Tipo==0:
+                    refri=refri-1
+                else:
+                    generi=generi-1
+            ve=np.random.randint(0,len(listaVehiculo))
+            if listaVehiculo[ve].Tipo==0:
+                if generi > 0:
+                    listaVehiculo[ve].Tipo=copy.deepcopy(1)
+                    ban=1
+            else:
+                if refri > 0:
+                    listaVehiculo[ve].Tipo=copy.deepcopy(0)
+                    ban=2
+            if ban > 0:
+                for i in range(0,numClientes):
+                    if vectorClientes[i].NumVehiculo == (ve+1):
+                        vectorClientes[i].Tipo =copy.deepcopy(listaVehiculo[ve].Tipo)
+        
+                        
+        #Intercambiar par de clientes
+        def intercambiar(vectorClientes,listaVehiculo):
+            cli1=np.random.randint(0,numClientes)
+            cli2=np.random.randint(0,numClientes)
+            cli3=0
+            cli4=0
+            
+            #Bandera igual a 1 indica que no se debe intercambiar
+            ban=0
+            #Me aseguro que los dos clientes de referencia sean de rutas diferentes y que existan mas de una ruta
+            if len(listaVehiculo) > 1:
+                while (cli1==cli2) and (vectorClientes[cli1].NumVehiculo==vectorClientes[cli2].NumVehiculo):
+                    cli2=np.random.randint(0,numClientes)
+            else:
+                ban=1
+            aux=0
+            if cli1 > cli2:
+                aux=copy.deepcopy(cli2)
+                cli2=copy.deepcopy(cli1)
+                cli1=copy.deepcopy(aux)
+            #Me aseguro que el par de clientes esten en el mismo vehiculo
+            if cli1 == 0:
+                if vectorClientes[cli1].NumVehiculo==vectorClientes[cli1+1].NumVehiculo:
+                    cli3=copy.deepcopy(cli1+1)
+                else:
+                    ban=1
+            else:
+                if vectorClientes[cli1].NumVehiculo==vectorClientes[cli1+1].NumVehiculo:
+                    cli3=copy.deepcopy(cli1+1)
+                else:
+                    if vectorClientes[cli1].NumVehiculo==vectorClientes[cli1-1].NumVehiculo:
+                        cli3=copy.deepcopy(cli1-1)
+                    else:
+                        ban=1
+                        
+            if cli2 == numClientes-1:
+                if vectorClientes[cli2].NumVehiculo==vectorClientes[cli2-1].NumVehiculo:
+                    cli4=copy.deepcopy(cli2-1)
+                else:
+                    ban=1
+            else:
+                if vectorClientes[cli2].NumVehiculo==vectorClientes[cli2+1].NumVehiculo:
+                    cli4=copy.deepcopy(cli2+1)
+                else:
+                    if vectorClientes[cli2].NumVehiculo==vectorClientes[cli2-1].NumVehiculo:
+                        cli4=copy.deepcopy(cli2-1)
+                    else:
+                        ban=1
+            aux=0
+            d1=0
+            d2=0
+            if ban > 0:
+                #Bandera igual a 2 indica que se debe intercambiar
+                ban=0
+                d1=vectorClientes[cli1].Demanda+vectorClientes[cli3].Demanda
+                d2=vectorClientes[cli2].Demanda+vectorClientes[cli4].Demanda
+                if listaVehiculo[vectorClientes[cli1].NumVehiculo-1].DemandaRuta-d1+d2 <= capacidadV:
+                    if listaVehiculo[vectorClientes[cli2].NumVehiculo-1].DemandaRuta+d1-d2 <= capacidadV:
+                        ban=1
+                b1=listaVehiculo[vectorClientes[cli1].NumVehiculo-1].NBodega
+                b2=listaVehiculo[vectorClientes[cli2].NumVehiculo-1].NBodega
+                sumb1=0
+                sumb2=0
+                if b1==b2:
+                    ban=ban+1
+                else:
+                    for i in range(0,len(listaVehiculo)):
+                        if listaVehiculo[i].NBodega == b1:
+                            sumb1=sumb1+listaVehiculo[i].DemandaRuta
+                        if listaVehiculo[i].NBodega == b2:
+                            sumb2=sumb2+listaVehiculo[i].DemandaRuta
+                    if sumb1 - d1 + d2 <= vectorCapacidadB[b1]:
+                        if sumb2 + d1- d2 <= vectorCapacidadB[b2]:
+                            ban=ban+1
+                if ban==2:
+                    listaVehiculo[vectorClientes[cli1].NumVehiculo-1].DemandaRuta=listaVehiculo[vectorClientes[cli1].NumVehiculo-1].DemandaRuta-d1+d2
+                    listaVehiculo[vectorClientes[cli2].NumVehiculo-1].DemandaRuta=listaVehiculo[vectorClientes[cli2].NumVehiculo-1].DemandaRuta+d1-d2
+                    aux=copy.deepcopy(vectorClientes[cli2].NumVehiculo)
+                    vectorClientes[cli2].NumVehiculo=copy.deepcopy(vectorClientes[cli1].NumVehiculo)
+                    vectorClientes[cli4].NumVehiculo=copy.deepcopy(vectorClientes[cli1].NumVehiculo)
+                    vectorClientes[cli1].NumVehiculo=copy.deepcopy(aux)
+                    vectorClientes[cli3].NumVehiculo=copy.deepcopy(aux)
+                    aux=copy.deepcopy(vectorClientes[cli2].NBodega)
+                    vectorClientes[cli2].NBodega=copy.deepcopy(vectorClientes[cli1].NBodega)
+                    vectorClientes[cli4].NBodega=copy.deepcopy(vectorClientes[cli1].NBodega)
+                    vectorClientes[cli1].NBodega=copy.deepcopy(aux)
+                    vectorClientes[cli3].NBodega=copy.deepcopy(aux)
+                    aux=copy.deepcopy(vectorClientes[cli2].Tipo)
+                    vectorClientes[cli2].Tipo=copy.deepcopy(vectorClientes[cli1].Tipo)
+                    vectorClientes[cli4].Tipo=copy.deepcopy(vectorClientes[cli1].Tipo)
+                    vectorClientes[cli1].Tipo=copy.deepcopy(aux)
+                    vectorClientes[cli3].Tipo=copy.deepcopy(aux)
+                    auxs1=copy.deepcopy(vectorClientes[cli1].Secuencia)
+                    auxs3=copy.deepcopy(vectorClientes[cli3].Secuencia)
+                    vectorClientes[cli1].Secuencia=copy.deepcopy(vectorClientes[cli2].Secuencia)
+                    vectorClientes[cli3].Secuencia=copy.deepcopy(vectorClientes[cli4].Secuencia)
+                    vectorClientes[cli2].Secuencia=copy.deepcopy(auxs1)
+                    vectorClientes[cli4].Secuencia=copy.deepcopy(auxs3)
+                    clienteAux=Cliente()
+                    for i in range(0,numClientes):
+                        for j in range(0,numClientes):
+                            if vectorClientes[i].NumVehiculo < vectorClientes[j].NumVehiculo:
+                                clienteAux=copy.deepcopy(vectorClientes[i].NumVehiculo)
+                                vectorClientes[i].NumVehiculo=copy.deepcopy(vectorClientes[j].NumVehiculo)
+                                vectorClientes[j].NumVehiculo=copy.deepcopy(clienteAux)
+                    se=0
+                    for j in range(0, len(listaVehiculo)):
+                        listaVehiculo[j].PrimerCliente=0
+                    for i in range(0,len(listaVehiculo)):
+                        se=0
+                        for j in range(0, numClientes):
+                           if vectorClientes[j].NumVehiculo==i+1:
+                               se=se+1
+                               vectorClientes[j].Secuencia=copy.deepcopy(se)
+                               if listaVehiculo[i].PrimerCliente==0:
+                                   listaVehiculo[i].PrimerCliente=copy.deepcopy(i+1)
+                               else:
+                                    listaVehiculo[i].UltimoCliente=copy.deepcopy(i+1)
+                               vectorClientes[j].Tipo =copy.deepcopy(listaVehiculo[i].Tipo)
+                               vectorClientes[j].NBodega=copy.deepcopy(listaVehiculo[i].NBodega)
+                   
+        
+        def cerrarBodega(vectorClientes,listaVehiculo):
+            bod=0
+            rutaseb=[]
+            listaVehiculoa=copy.deepcopy(listaVehiculo)
+        
+            lbod=[]
+            for i in range(0,len(listaVehiculo)):
+                if listaVehiculo[i].NBodega not in lbod:
+                    lbod.append(listaVehiculo[i].NBodega)
+            for i in range(0,numBodega):
+                if i in lbod:
+                    bod=bod+vectorCapacidadB[i]
+            b=lbod[np.random.randint(0,len(lbod))]
+            if bod -vectorCapacidadB[b] >= demandaTotal:
+                lbod.remove(b)
+                lde=[]
+                for i in range(0,len(lbod)):
+                    lde.append(0)
+                for i in range(0,len(lbod)):
+                    lde[i]=vectorCapacidadB[lbod[i]]
+                for i in range(0,len(listaVehiculo)):
+                    if listaVehiculo[i].NBodega in lbod:
+                        lde[lbod.index(listaVehiculo[i].NBodega)]=lde[lbod.index(listaVehiculo[i].NBodega)]-listaVehiculo[i].DemandaRuta
+                        
+                for i in range(0,len(listaVehiculo)):
+                    if listaVehiculo[i].NBodega not in lbod:
+                        rutaseb.append(i)
+                j=0
+                cont=1        
+                for i in range(0,len(rutaseb)):
+                    if lde[j] - listaVehiculo[rutaseb[i]].DemandaRuta > 0:
+                        listaVehiculoa[rutaseb[i]].NBodega=copy.deepcopy(lde[j])
+                        lde[j]=lde[j]- listaVehiculoa[rutaseb[i]].DemandaRuta
+                        cont=cont+1
+                    else:
+                        j=j+1
+                
+                if cont == len(rutaseb):
+                    listaVehiculo=copy.deepcopy(listaVehiculoa)
+                    for i in range(0,len(listaVehiculo)):
+                        if i in rutaseb:
+                            for j in range(0,numClientes):
+                                vectorClientes[j].NBodega=copy.deepcopy(listaVehiculo[i].NBodega)
+                    
+        
+                
+        def cerrarAbrirBodega(vectorClientes,listaVehiculo):
+            #Posicion de la bodega por cerrar b1 y por abrir b2
+            b1=0
+            b2=0
+            lbod=[]
+            #Demanda atendida por la bodega
+            dab=0
+            #Identificar cuales son las bodegas abiertas en la solucion
+            for i in range(0,len(listaVehiculo)):
+                if listaVehiculo[i].NBodega not in lbod:
+                    lbod.append(listaVehiculo[i].NBodega)
+            #Escoger una bodega a cerrar
+            b1=np.random.randint(0,len(lbod))
+            #Identificar la demanda que suple esa bodega
+            for i in range(0,len(listaVehiculo)):
+                if listaVehiculo[i].NBodega == lbod[b1]:
+                    dab=dab+listaVehiculo[i].DemandaRuta
+             #Escoger una abrir y si la capacidad alcanza para suplir las demandas de las rutas     
+            b2=np.random.randint(0,len(vectorCapacidadB))
+            while b2 in lbod:
+                b2=np.random.randint(0,len(vectorCapacidadB))
+            if vectorCapacidadB[b2] >= dab:
+                for i in range(0,len(listaVehiculo)):
+                    if listaVehiculo[i].NBodega == copy.deepcopy(lbod[b1]):
+                        listaVehiculo[i].NBodega=copy.deepcopy(b2)
+                for i in range(0,numClientes):
+                    if vectorClientes[i].NBodega==copy.deepcopy(lbod[b1]):
+                        vectorClientes[i].NBodega=copy.deepcopy(b2)
+                        
+                for i in range(0,numClientes):
+                    for j in range(0,len(listaVehiculo)):
+                        if vectorClientes[i].NumVehiculo == j+1:
+                            vectorClientes[i].NBodega=copy.deepcopy(listaVehiculo[j].NBodega)
+                            vectorClientes[i].Tipo =copy.deepcopy(listaVehiculo[j].Tipo)
+                        
+         ######################################## BUSQUEDA LOCAL ###################################       
+        
+        def busquedaLocal(vectorClientes,listaVehiculo, fitSol):
+            
+            vectorClienteAux=vectorClientes
+            listaVehiculoAux=listaVehiculo
+            fitAux1=0
+            fitAux2=0
+            ban=0
+            i=0
+            while ban==0 or i < 200:
+                ban=0
+                i=i+1
+                Operador=np.random.randint(1,6)
+                if Operador==1:
+                    moverCliente(vectorClienteAux,listaVehiculoAux)
+                if Operador==2:
+                    cambiarTipo(vectorClienteAux,listaVehiculoAux)
+                if Operador == 3:
+                    intercambiar(vectorClienteAux,listaVehiculoAux)
+                if Operador == 4:
+                    cerrarBodega(vectorClienteAux,listaVehiculoAux)
+                if Operador == 5:
+                    cerrarAbrirBodega(vectorClienteAux,listaVehiculoAux)
+                fitAux1,fitAux2 = Evaluacion(vectorClienteAux,listaVehiculoAux)
+                if fitAux1 < fitSol[0]:
+                    ban=1
+                if fitAux2 > fitSol[1]:
+                    ban=1
+                if ban==1:
+                    vectorClientes=copy.deepcopy(vectorClienteAux)
+                    listaVehiculo=copy.deepcopy(listaVehiculoAux)
+                if i==100:
+                    vectorClienteAux=copy.deepcopy(vectorClientes)
+                    listaVehiculoAux=copy.deepcopy(listaVehiculo)
+        
+        
+        
+        #METODOS DE ACERCAMIENTO
+        #AcercarBodegas                
+        def metAB(vectorClientes1,listaVehiculo1,vectorClientes2,listaVehiculo2):
+            lbod1=[]
+            for i in range(0,len(listaVehiculo1)):
+                if listaVehiculo1[i].NBodega not in lbod1:
+                    lbod1.append(listaVehiculo1[i].NBodega)
+            lbod2=[]
+            for i in range(0,len(listaVehiculo2)):
+                if listaVehiculo2[i].NBodega not in lbod2:
+                    lbod2.append(listaVehiculo2[i].NBodega)
+         
+            #si la cantidad de bodegas abiertas es igual, se reemplazan
+            z=[] #vector auxiliar de indices
+            if len(lbod1)==len(lbod2):
+                
+                for j in range(0,len(listaVehiculo2)):
+                    z.append(j)
+                
+                for i in range(0,len(lbod2)):
+                    for j in range(0,len(listaVehiculo2)):
+                        if (listaVehiculo2[j].NBodega==lbod2[i]) and (j in z):
+                            listaVehiculo2[j].NBodega==copy.deepcopy(lbod1[i])
+                            z.remove(j)
+        
+                for i in range(0,len(listaVehiculo2)):
+                    for j in range(0,len(vectorClientes2)):
+                        if vectorClientes2[j].NumVehiculo== i+1:
+                            vectorClientes2[j].NBodega==copy.deepcopy(listaVehiculo2[i].NBodega)
+                            vectorClientes2[j].Tipo =copy.deepcopy(listaVehiculo2[i].Tipo)
+        
+                            
+        
+        def metATR(vectorClientes1,listaVehiculo1,vectorClientes2,listaVehiculo2):
+            if len(listaVehiculo1)==len(listaVehiculo2):
+                for i in range(0,len(listaVehiculo1)):
+                    listaVehiculo2[i].Tipo=copy.deepcopy(listaVehiculo1[i].Tipo)
+                for i in range(0,len(listaVehiculo2)):
+                    for j in range(0,numClientes):
+                        if vectorClientes2[j].NumVehiculo== i+1:
+                            vectorClientes2[j].Tipo=copy.deepcopy(listaVehiculo2[i].Tipo)
+                            vectorClientes2[j].NBodega=copy.deepcopy(listaVehiculo2[i].NBodega)
+                            
+        
+        
+        #Metodo para alejar bodegas
+        def metAlB(vectorClientes1,listaVehiculo1,vectorClientes2,listaVehiculo2):
+            lbod1=[]
+            for i in range(0,len(listaVehiculo1)):
+                if listaVehiculo1[i].NBodega not in lbod1:
+                    lbod1.append(listaVehiculo1[i].NBodega)
+            lbod2=[]
+            for i in range(0,len(listaVehiculo2)):
+                if listaVehiculo2[i].NBodega not in lbod2:
+                    lbod2.append(listaVehiculo2[i].NBodega)
+        
+            #si la cantidad de bodegas abiertas es igual, se reemplazan
+            z=[] #vector auxiliar de indices
+            if len(lbod1)==len(lbod2):        
+                po=np.random.randint(0,len(lbod2))       
+                while lbod1[po]==lbod2[po]:
+                            lbod1[po]=np.random.randint(0,numBodega)           
+                
+                for j in range(0,len(listaVehiculo2)):
+                    z.append(j)
+                
+                for i in range(0,len(lbod2)):
+                    for j in range(0,len(listaVehiculo2)):
+                        if (listaVehiculo2[j].NBodega==lbod2[i]) and (j in z):
+                            listaVehiculo2[j].NBodega==copy.deepcopy(lbod1[i])
+                            z.remove(j)
+                for i in range(0,len(listaVehiculo2)):
+                    for j in range(0,len(vectorClientes2)):
+                        if vectorClientes2[j].NumVehiculo== i+1:
+                            vectorClientes2[j].NBodega==copy.deepcopy(listaVehiculo2[i].NBodega)
+                            vectorClientes2[j].Tipo =copy.deepcopy(listaVehiculo2[i].Tipo)
+                            
+        #Metodo para alejar tipo de ruta
+        def metAlTR(vectorClientes1,listaVehiculo1,vectorClientes2,listaVehiculo2):
+            if len(listaVehiculo1)==len(listaVehiculo2):
+                
+                for i in range(0,len(listaVehiculo1)):
+                    if listaVehiculo2[i].Tipo==1 and listaVehiculo1[i].Tipo==1:
+                        listaVehiculo2[i].Tipo=copy.deepcopy(0)
+                    else:
+                        if listaVehiculo2[i].Tipo==0 and listaVehiculo1[i].Tipo==1:
+                            listaVehiculo2[i].Tipo=copy.deepcopy(0)
+                        else:
+                            if listaVehiculo2[i].Tipo==0 and listaVehiculo1[i].Tipo==0:
+                                listaVehiculo2[i].Tipo=copy.deepcopy(1)
+                            else:
+                                if listaVehiculo2[i].Tipo==1 and listaVehiculo1[i].Tipo==0:
+                                    listaVehiculo2[i].Tipo=copy.deepcopy(1)
+                    
+                for i in range(0,len(listaVehiculo2)):
+                    for j in range(0,numClientes):
+                        if vectorClientes2[j].NumVehiculo== i+1:
+                            vectorClientes2[j].Tipo=copy.deepcopy(listaVehiculo1[i].Tipo)
+                            vectorClientes2[j].NBodega=copy.deepcopy(listaVehiculo2[i].NBodega)
+        
+        
+        
+        
+        #################### OPERADORES DE LOGICA DIFUSA################################
+                            #Vector de objetos, lista de objetos, vector 1x2, numero
+        def operadoresLD(vectorClientes1,listaVehiculo1, fitSol1, rank1, vectorClientes2,listaVehiculo2, fitSol2, rank2):
+            dist=distanciaSol(vectorClientes1,listaVehiculo1,vectorClientes2,listaVehiculo2)
+            Ope=np.random.randint(1,3)
+            vectorClientesAuxiliar2=vectorClientes2
+            listaVehiculoAuxiliar2=listaVehiculo2
+            probAcercamiento=np.random.random()
+            #CERCA/BUENO---> Acercar
+            if dist < distanciaCorta  and rank2<=2:
+                if probAcercamiento < 0.9:
+                    if Ope==1:
+                        metAB(vectorClientes1,listaVehiculo1,vectorClientesAuxiliar2,listaVehiculoAuxiliar2)
+                    if Ope==2:
+                        metATR(vectorClientes1,listaVehiculo1,vectorClientesAuxiliar2,listaVehiculoAuxiliar2)
+                else:
+                    if Ope==3:
+                        busquedaLocal(vectorClientesAuxiliar2,listaVehiculoAuxiliar2, fitSol2)
+            #CERCA/MALO---> Alejar
+            if dist < distanciaCorta  and rank2>2:
+                if Ope==1:
+                    metAlB(vectorClientes1,listaVehiculo1,vectorClientesAuxiliar2,listaVehiculoAuxiliar2)
+                if Ope==2:
+                    metAlTR(vectorClientes1,listaVehiculo1,vectorClientesAuxiliar2,listaVehiculoAuxiliar2)
+                if Ope==3:
+                    busquedaLocal(vectorClientesAuxiliar2,listaVehiculoAuxiliar2, fitSol2)
+            #LEJOS/BUENO---> Busqueda local
+            if dist > distanciaCorta  and rank2<=2:
+                busquedaLocal(vectorClientesAuxiliar2,listaVehiculoAuxiliar2, fitSol2)
+            #LEJOS/MALO---> Nueva solucion
+            if dist > distanciaCorta  and rank2 > 2:
+                vectorClientes2,listaVehiculo2, fitSol2[0], fitSol2[1]= CrearSolucion(orden)
+            fit1=copy.deepcopy(evaluacionO1(P[i],Rutas[i]))
+            fit2=copy.deepcopy(evaluacionO2(P[i],Rutas[i]))
+            pena1=copy.deepcopy(penalizacionO1(P[i],Rutas[i]))
+            pena2=copy.deepcopy(penalizacionO2(P[i],Rutas[i]))
+            fit1=copy.deepcopy(fit1+pena1)
+            fit2=copy.deepcopy(fit2+pena2)
+            ban=0
+            if fit1 < fitSol2[0]:
+                ban=1
+            if fit2 > fitSol2[1]:
+                ban=1
+            if ban==1:
+                vectorClientes2=copy.deepcopy(vectorClientesAuxiliar2)
+                listaVehiculo2=copy.deepcopy(listaVehiculoAuxiliar2)
+                
+        ##############################################################SETUP#######
+        iteracion=0                    
+        Solucion=Cliente() 
+        P=[]
+        Rutas=[]
+        fit=np.zeros((N,m))
+        rankeoP=np.zeros((N,1))
+        
+        ###Crear soluciones iniciales y evaluar los objetivos
+        for i in range(0,N):
+            solucion,c,f1,f2=CrearSolucion(orden)
+            P.insert(i,solucion)
+            Rutas.insert(i,c)
+            fit[i,0]=f1
+            fit[i,1]=f2
+        #Rankeo de las soluciones iniciales
+        rankeoP=rankeo(fit,N)
+        #Ordenar
+        fastNonDominatedSort(P, fit,rankeoP, N,Rutas)
+        print(fit)
+        print(rankeoP)
+        sumaRank=0
+        
+        #ELEMENTOS DEL EXTERNO
+        Externo=[]
+        FitExterno=[]
+        RankExterno=[]
+        #Lista auxiliar para actualizar el externo
+        la1=[]
+        Fita1=[]
+        #Lista auxiliar secundaria para actualizar el externo
+        la2=[]
+        Fita2=[]
+        
+        #Variables de control
+        MAXGEN=1000 #9000 PARA DOS HORAS Y MEDIA -750 para 15 minutos- 50 para 1 minuto
+        GEN=0
+        tiempo=time.time()
+        print(tiempo)
+        
+        while GEN<MAXGEN:
+            #distanciaCorta=distanciaCorta*0.98
+            sumaRank=0
+            #Solucion de referencia
+            sR=np.random.randint(0,N)
+            while rankeoP[sR] !=1:
+                sR=np.random.randint(0,N)
+            
+            for i in range(0,N):
+                if i!=sR and rankeoP[i]!=1:
+                    operadoresLD(P[sR],Rutas[sR], fit[sR], rankeoP[sR], P[i],Rutas[i], fit[i], rankeoP[i])
+                    fit1=copy.deepcopy(evaluacionO1(P[i],Rutas[i]))
+                    fit2=copy.deepcopy(evaluacionO2(P[i],Rutas[i]))
+                    pena1=copy.deepcopy(penalizacionO1(P[i],Rutas[i]))
+                    pena2=copy.deepcopy(penalizacionO2(P[i],Rutas[i]))
+                    fit1=copy.deepcopy(fit1+pena1)
+                    fit2=copy.deepcopy(fit2+pena2)
+                    fit[i,0]=fit1
+                    fit[i,1] =fit2
+        
+            #Rankeo de las soluciones iniciales
+            rankeoP=rankeo(fit,N)
+            #Ordenar
+            fastNonDominatedSort(P, fit,rankeoP, N,Rutas)
+            
+            #EXTERNO
+            #Operaciones para actualizar externo
+            #Escoger las soluciones con rank=1 en la población P
+            for i in range(0,N):
+                if rankeoP[i]==1:
+                    la1.append(P[i])
+                    Fita1.append(fit[i])
+            #Unir las soluciones que se encuentran en el externo junto con las soluciones en la la1
+            if (len(Externo)>0):
+                for i in range(0,len(Externo)):
+                    la1.append(Externo[i])
+                    Fita1.append(FitExterno[i])
+            #Realizar y el ordenamiento rankeo en la1
+            ranka1=np.zeros((len(la1),1))
+            ranka1=rankeol(Fita1,len(la1))
+            fastNonDominatedSortl(la1, Fita1,ranka1,len(la1) )
+            #Guardar las soluciones con rank=1 en la2, vaciar el externo
+            for i in range(0,len(la1)):
+                if ranka1[i]==1:
+                    la2.append(la1[i])
+                    Fita2.append(Fita1[i])
+
+            Externo=[]
+            FitExterno=[]
+            #Actualizar el Externo
+            Externo=copy.deepcopy(la2)
+            FitExterno=copy.deepcopy(Fita2)
+            #Vaciar listas auxiliares    
+            la1=[]
+            Fita1=[]
+            la2=[]
+            Fita2=[]
+            
+            for i in range(0, N):
+                sumaRank=sumaRank+rankeoP[i]
+            iteracion=iteracion+1
+            print(FitExterno)
+            print(rankeoP)
+            final=time.time()
+            GEN=final-tiempo
+
+        
+        archivo = open("Experimentos.txt","a")
+        archivo.write('\n' +'\n'+"Tamaño poblacion: "+'\t'+ str((N))+"Tamaño final Externo:" +'\t'+ str((len(Externo))) +"Tiempo por réplica:"+'\t' + str((MAXGEN)) )
+        for j in range(0,len(FitExterno)):
+            archivo.write('\n'  + str(("{:,}".format(FitExterno[j][0]).replace(',','x').replace('.',',').replace('x','.')))+'\t'+str(("{:,}".format(FitExterno[j][1]).replace(',','x').replace('.',',').replace('x','.'))))
+        archivo.close()
+        del Externo[:]
+        del FitExterno[:]
+        #for i in range(0,len(Externo)):
+           #print("solucion",i+ 1)
+        
+           #Solucion=Externo[i]
+           #for i in range(0,numClientes):
+              #print("Cliente:",Solucion[i].NCliente,"Demanda",Solucion[i].Demanda,"Vehiculo",Solucion[i].NumVehiculo,"Secuencia:",Solucion[i].Secuencia,"Bodega:",Solucion[i].NBodega,"Tipo:",Solucion[i].Tipo)
+            
+        print(len(Externo))
+        

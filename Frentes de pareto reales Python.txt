@@ -1,0 +1,113 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Tue Aug  4 04:23:44 2020
+
+@author: Majo
+"""
+import pandas as pd #lIBRERÍA PARA IMPORTAR EXCELL
+import numpy as np #LIBRERIA PARA MATRICES Y VECTORES
+from random import randint #LIBRERIA PARA ALEATORIOS
+import copy
+
+############
+
+#Buscar la frontera de referencia
+for j in range(1,13):
+    instancia=j
+    
+    
+    archivo = open("TrueFronts.txt","a")
+    archivo.write('\n' +'\n'+"Instancia "+str(instancia)+'\n' )
+    archivo.close()
+    
+        
+
+    soluciones1=np.array(pd.read_excel("Fronteras.xlsx", sheetname='I'+str(instancia)+str(1),  header=None).as_matrix())
+    tamaño1= soluciones1.shape[0]
+    
+    soluciones2=np.array(pd.read_excel("Fronteras.xlsx", sheetname='I'+str(instancia)+str(2),  header=None).as_matrix())
+    tamaño2= soluciones2.shape[0]
+    
+    tamaño=tamaño1+tamaño2
+    soluciones=np.zeros((tamaño,2))
+    print(soluciones)
+    soluciones[0:tamaño1,:]= soluciones1
+    soluciones[tamaño1:tamaño,:]= soluciones2
+    
+    
+    def rankeo(fit,tamaño):
+                 
+            
+        #VECTOR DE SOLUCIONES QUE DOMINAN A LA SOLUCION ACTUAL EVALUADA NP
+        ns=np.zeros((tamaño,1))
+        nsAux=np.zeros((tamaño,1))
+        #Vector de rankeo de las soluciones
+        rank=np.zeros((tamaño,1))
+        #MATRIZ DE SOLUCIONES QUE SON DOMINADAS POR LA SOLUCION ACTUAL EVALUADA
+        sp=np.zeros((tamaño,tamaño))
+        listaP=[]
+            
+        #Evaluación de dominancia y no dominancia
+        for i in range(0,tamaño):
+            listaP.append(i)
+            for j in range(0,tamaño):
+                ban=0
+                if fit[i][0] < fit[j][0]:
+                    ban=ban+1
+                if fit[i][1] > fit[j][1]:
+                    ban=ban+1
+                if i!=j:
+                    if ban==2:
+                        sp[i,j]=1
+        for i in range(0,tamaño):
+            for j in range(0,tamaño):
+                ns[j]=ns[j]+sp[i,j]
+        nsAux=copy.deepcopy(ns)
+        
+        #Rankeo de las fronteras
+        #mientras se identifican todas las fronteras
+        
+        listaF=[]
+        frontera=1
+        listaux=[]
+        for i in range(0,tamaño):
+            listaux.append(ns[i])
+            
+        while (len(listaP) >0) and (ban==0):
+            listaF=[]
+            for i in range(0,tamaño):
+                    
+                if (ns[i]==0) and (i in listaP):
+                        
+                    for j in range(0,tamaño):
+                        if sp[i,j]==1:
+                            listaF.append(j)
+                    listaP.remove(i)
+                    rank[i]=frontera
+                        
+            for z in range(0,tamaño):
+                if z in listaF:
+                    nsAux[z]=nsAux[z]-listaF.count(z)
+            ns=copy.deepcopy(nsAux)
+            if frontera > 2*tamaño:
+                ban=1
+            frontera=frontera+1
+        return(rank)
+        
+    def truePareto(tamaño,fit,rank):
+        
+        TruePareto=[]
+        for i in range(0,tamaño):
+            if rank[i]==1:
+                TruePareto.append(fit[i,:])
+        
+        return(TruePareto)
+    
+    rank=rankeo(soluciones,tamaño)
+    print(rank)
+    TP=truePareto(tamaño,soluciones,rank)
+    
+    archivo = open("TrueFronts.txt","a")
+    for j in range(0,len(TP)):
+        archivo.write('\n'  + str(("{:,}".format(TP[j][0]).replace(',','x').replace('.',',').replace('x','.')))+'\t'+str(("{:,}".format(TP[j][1]).replace(',','x').replace('.',',').replace('x','.'))))
+    archivo.close()
