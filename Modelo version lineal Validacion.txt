@@ -1,0 +1,172 @@
+*******LRP VERSIÓN LINEAL*******
+
+SET
+
+*Conjunto de nodos (Agregar los valores de i y de j)
+v  nodos /b1,b2,b3,b4,b5,1,2,3,4,5,6,7,8,9,10/
+
+*Subonjunto de instalaciones
+i(v)  instalacion /b1,b2,b3,b4,b5/
+*Subconjunto de clientes
+j(v)  clientes /1*10/
+
+*conjunto del total de vehiculos
+k totalvehiculos/1,2,3,4/
+*subconjunto numero de vehiculos genéricos
+kg(k)  vehiculosre /1,2/
+*subconjunto Numero de vehiculos refrigerados
+kr (k) vehiculosge /3,4/;
+
+
+*Copia del conjunto v
+alias(v,vc)
+alias(j, jc)
+alias(i,ic) ;
+
+
+
+******************************Parámetros*******************************
+Parameters
+
+     W(i)  'capacidad en cada instalación i'
+       /    b1  140
+            b2  140
+            b3  140
+            b4  140
+            b5  140/
+    O(i) 'Costo de apertura de cada instalacion i'
+        /   b1  10841
+            b2  11961
+            b3  6091
+            b4  7570
+            b5  7497/
+    d(j)    'Demanda del cliente j'
+        /   1   17
+            2   18
+            3   13
+            4   19
+            5   12
+            6   18
+            7   13
+            8   13
+            9   17
+            10  20/
+    fijo(k)    'Costo por usar el vehiculo k'
+        /   1   1000
+            2   1000
+            3   1500
+            4   1500/
+
+
+*******************************************************************************
+*                 IMPORTANDO modelo FKELRP(PARAMETROS) DE EXCEL                     *
+*******************************************************************************
+*PARAMETROS De la demanda
+$call gdxxrw.exe modeloFKELRP.xlsx par=c rng=distancias!A1:P16 Rdim=1 Cdim=1
+parameter c(v,vc);
+$GDXIN modeloFKELRP.gdx
+$LOAD c
+$GDXIN
+*******************************************************************************
+*******************************************************************************
+*                 IMPORTANDO modelo FKELRP(PARAMETROS) DE EXCEL                     *
+*******************************************************************************
+*PARAMETROS De la demanda
+$call gdxxrw.exe modeloFKELRP.xlsx par=tg rng=tiempos!A1:P16 Rdim=1 Cdim=1
+parameter tg(v,vc);
+$GDXIN modeloFKELRP.gdx
+$LOAD tg
+$GDXIN
+*******************************************************************************
+
+Scalar n número de clientes / 10 /;
+Scalar Q capacidad de los vehículos / 70 /;
+Scalar dt tiempo límite / 27.7 /;
+Scalar dtt tiempo límite refrigerados / 73.9 /;
+Scalar s tiempo límite / 5 /;
+
+
+**************************************************************************************************************************************************************
+
+
+
+Variables
+     Y(i)  'Desicion de apertura de la instalacion i'
+     x(v,vc,k) 'si se usa el vehiculo k, desde el nodo i al j'
+     f(i,j) 'si el cliente j es asignado a la instalacion i'
+     z 'valor de la funcion objetivo'
+     u(j) ' Auxiliar'
+     uu(v,k) ' Auxiliar 2'
+     T(v,k) 'Tiempo de los no refrigerados'
+     da(i) ' carga del deposito Auxiliar'  ;
+
+binary Variable x;
+binary variable Y;
+binary variable f;
+*binary variable u;
+
+**************************************************************************************************************************************************************
+equations
+F1min funcion objetivo costos operacionales
+R1(j) restriccion_1
+R2(k) restriccion_2
+R3(k,v) restriccion_3
+R4(k) restriccion_4
+R5(j,jc,k) restriccion_5
+R6(i,j,k) restriccion_6
+R7(i) restriccion_7
+R8(v,j,k) restriccion_8
+R9(j,kg) restriccion_9
+R9c(j,kr) restriccion_9c
+R10(i,k) restriccion_10
+R10c(v,k) restriccion_10c
+
+R11(v,j,k) restriccion_11
+R12(i,k) restriccion_12
+R13(v,k) restriccion_13
+R14(i) restriccion_14
+R15 restriccion_15
+R16(j) restriccion_16;
+
+*R24(j) restricion_24
+*R25(v,vc) restriccion_25
+*R26 restriccion_26
+*R27(j) restriccion_27
+*R28 restriccion_28;
+
+
+
+
+*****************************************************************
+
+F1min.. z =e= sum((i), O(i)*Y(i)) + sum((v,vc,k),c(v,vc)*x(v,vc,k)) + sum((k,i,j),Fijo(k)*x(i,j,k))+ (1/n)*(sum((v,k),0.03*T(v,k)))-log(1)+ sum((i,j,kr,v),(0.134/Q)*c(i,j)*uu(v,kr))+ sum((i,j,kg,v),1*uu(v,kg))+sum((i), (0.536/W(i))*da(i));
+
+
+R1(j).. sum((v,k), x(v,j,k))=e= 1;
+
+R2(k).. sum((j,v), d(j)*x(v,j,k)) =l= Q;
+R3(k,v).. sum((vc), x(v,vc,k))  =e= sum((vc), x(vc,v,k));
+R4(k)..sum((i,j), x(i,j,k)) =l= 1;
+R5(j,jc,k)..u(j)-u(jc) + n*x(j,jc,k)=l= n-1;
+R6(i,j,k)..sum((jc), x(i,jc,k))+ sum((ic), x(ic,j,k)) =l= 1+ f(i,j);
+R7(i)..sum((j), d(j)*f(i,j)) =l= W(i)*Y(i);
+
+R8(v,j,k)..T(j,k) =g= T(v,k)+ (tg(v,j)+s)-1000*(1-x(v,j,k));
+R9(j,kg)..T(j,kg)=l= dt;
+R9c(j,kr)..T(j,kr)=l= dtt;
+R10(i,k)..T(i,k)=e= 0;
+R10c(v,k)..T(v,k)=g= 0;
+
+R11(v,j,k)..uu(j,k) =l= uu(v,k) - (d(j))+1000*(1-x(v,j,k));
+R12(i,k)..uu(i,k)=l= sum((v,j),d(j)*x(v,j,k)) ;
+R13(v,k)..uu(v,k)=g= 0;
+R14(i)..da(i)=e=sum((j),d(j)*f(i,j));
+R15..sum((i,j),f(i,j))=e=n;
+R16(j)..sum((i),f(i,j))=e=1;
+
+
+
+Model modelo /all/
+solve modelo using mip minimizing z;
+
+display W,O, d,c,n,Q, Fijo, x.l, Y.l, f.l, z.l, u.l, T.l, uu.l, da.l;
