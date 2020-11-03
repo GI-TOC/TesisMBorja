@@ -30,20 +30,20 @@ En este archivo se encuentra la programación del algoritmo NSGA-II documentado.
 En este archivo se encuentra la programación del algoritmo NSGRASPxLD documentado.
 
 * CONJUNTO DE INSTANCIAS
-La capeta de instancias contiene 12 archivos de excell donde se encuentran las instancias modificadas de Barreto y Prodhon para el problema propuesto
+Los documentos de instancias son 12 archivos de excell donde se encuentran las instancias modificadas de Barreto y Prodhon para el problema propuesto
 
 Número 	Nombre		Autor Clientes Instalaciones Etiqueta
-1	Coord20-5-1b	Prodhon	20	5	Instancia 1
-2	CoordGaspelle	Barreto	21	5	Instancia 2
-3	CoordGaspelle4	Barrteo	32	5	Instancia 3
-4	CoordGaspelle6	Barreto	36	5	Instancia 4
-5	CoordChrist50	Barreto	50	5	Instancia 5
-6	Coord50-5-1	Prodhon	50	5	Instancia 6
-7	Coord50-5-1b	Prodhon	50	5	Instancia 7
-8	Coord20-5-2	Prodhon	50	5	Instancia 8
-9	CoordDas88	Barreto	88	8	Instancia 9
-10	Coord100-5-1	Prodhon	100	5	Instancia 10
-11	Coord100-10-1	Prodhon	100	10	Instancia 11
+1 	Coord20-5-1b	  Prodhon	20	5	Instancia 1
+2 	CoordGaspelle	  Barreto	21	5	Instancia 2
+3 	CoordGaspelle4	Barrteo	32	5	Instancia 3
+4	  CoordGaspelle6	Barreto	36	5	Instancia 4
+5	  CoordChrist50	  Barreto	50	5	Instancia 5
+6	  Coord50-5-1	    Prodhon	50	5	Instancia 6
+7	  Coord50-5-1b	  Prodhon	50	5	Instancia 7
+8	  Coord20-5-2	    Prodhon	50	5	Instancia 8
+9	  CoordDas88	    Barreto	88	8	Instancia 9
+10	Coord100-5-1	  Prodhon	100	5	Instancia 10
+11	Coord100-10-1	  Prodhon	100	10	Instancia 11
 12	CoordChrist100	Barreto	100	10	Instancia 12
 
 * FRENTE DE PARETO REALES
