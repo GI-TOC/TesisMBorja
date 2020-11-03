@@ -26,10 +26,10 @@ Este archivo contiene la versión lineal del modelo matemático, éste se puede 
 * NSGA-II EXTERNO PYTHON
 En este archivo se encuentra la programación del algoritmo NSGA-II documentado.
 
-*NSGRASPxLD EXTERNO INSTANCIAS PYTHON
+* NSGRASPxLD EXTERNO INSTANCIAS PYTHON
 En este archivo se encuentra la programación del algoritmo NSGRASPxLD documentado.
 
-*CONJUNTO DE INSTANCIAS
+* CONJUNTO DE INSTANCIAS
 La capeta de instancias contiene 12 archivos de excell donde se encuentran las instancias modificadas de Barreto y Prodhon para el problema propuesto
 
 Número 	Nombre		Autor Clientes Instalaciones Etiqueta
@@ -46,11 +46,11 @@ Número 	Nombre		Autor Clientes Instalaciones Etiqueta
 11	Coord100-10-1	Prodhon	100	10	Instancia 11
 12	CoordChrist100	Barreto	100	10	Instancia 12
 
-*FRENTE DE PARETO REALES
+* FRENTE DE PARETO REALES
 El documento tiene la programación en python para escoger las soluciones que pertenecen al frente de pareto real por cada instancias
 teniendo en cuenta uno archivo de todas las soluciones encontradas
 
-*MÉTRICAS
+* MÉTRICAS
 
 Este documento tiene la programación en pytohn para calcular las métricas DG y MS, ya que requiere de muchos pasos y procedimiento, en cambio las otras métricas
 fueron calculadas en excel.
